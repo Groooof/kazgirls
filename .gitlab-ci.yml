@@ -1,0 +1,224 @@
+image:
+  name: docker:27.4-dind
+  pull_policy: if-not-present
+
+variables:
+  ALPINSIBLE: '${CI_REGISTRY}/kazgirls/kazgirls/alpine-ssh:latest'
+  DOCKER_IMAGE_PATH: "${CI_REGISTRY_IMAGE}/${CI_PROJECT_NAME}"
+  VERSION_PROD: "b${CI_PIPELINE_ID}prod"
+  VERSION_DEV: "b${CI_PIPELINE_ID}dev"
+  VERSION_PUB: "b${CI_PIPELINE_ID}"
+  VERSION_LINT: "b${CI_PIPELINE_ID}tst"
+  APP_API: "api"
+  APP_FRONTEND: "frontend"
+  APP_TEST: "api-test"
+
+stages:
+  - build
+  - test
+  - deploy
+  - cleanup
+
+.base_template: &base_template
+  stage: build
+  before_script:
+    - docker info
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+
+.build_template: &build_template
+  <<: *base_template
+  script:
+    - echo "Current ${APP_NAME} version is ${VERSION}"
+    - >
+      if [[ "$ENV_LIST_NAME" ]]; then
+        eval "echo -e \\\"CI_COMMIT_SHA=$CI_COMMIT_SHA\n\$$ENV_LIST_NAME\\\" > ./frontend/.docker/docker.env"
+        eval "echo -e \\\"CI_COMMIT_SHA=$CI_COMMIT_SHA\n\$$ENV_LIST_NAME\\\" > ./frontend/.env"
+      fi;
+    - image_name=${DOCKER_IMAGE_PATH}/${APP_NAME}:${VERSION}
+    - echo -e "docker build --build-arg RELEASE=${CI_COMMIT_SHA} -f ./${WORK_DIR}/.docker/Dockerfile --target ${TARGET_IMAGE} -t ${image_name} ./${WORK_DIR}"
+    - docker build --build-arg RELEASE=${CI_COMMIT_SHA} -f ./${WORK_DIR}/.docker/Dockerfile --target ${TARGET_IMAGE} -t ${image_name} ./${WORK_DIR}
+    - echo -e "docker push ${image_name}"
+    - docker push ${image_name}
+
+build-test:
+  stage: build
+  <<: *build_template
+  variables:
+    APP_NAME: ${APP_TEST}
+    TARGET_IMAGE: "api-test"
+    WORK_DIR: "api"
+    VERSION: ${VERSION_LINT}
+
+build-api:
+  stage: build
+  <<: *build_template
+  variables:
+    APP_NAME: ${APP_API}
+    TARGET_IMAGE: "api-prod"
+    WORK_DIR: "api"
+    VERSION: ${VERSION_PUB}
+  needs:
+    - build-test
+
+build-frontend-dev:
+  stage: build
+  <<: *build_template
+  variables:
+    APP_NAME: ${APP_FRONTEND}
+    TARGET_IMAGE: "nginx-dev"
+    WORK_DIR: "frontend"
+    VERSION: ${VERSION_DEV}
+    ENV_LIST_NAME: "DEV_DOCKER_FRONTEND_COMPOSE_ENV_LIST"
+
+build-frontend-prod:
+  stage: build
+  only:
+    - master
+  <<: *build_template
+  variables:
+    APP_NAME: ${APP_FRONTEND}
+    TARGET_IMAGE: "nginx-prod"
+    WORK_DIR: "frontend"
+    VERSION: ${VERSION_PROD}
+    ENV_LIST_NAME: "PROD_DOCKER_FRONTEND_COMPOSE_ENV_LIST"
+
+
+.base_test_api_template: &base_test_api_template
+  stage: test
+  image: ${DOCKER_IMAGE_PATH}/${APP_TEST}:${VERSION_LINT}
+  interruptible: true
+  needs:
+    - build-test
+  before_script:
+    - cd /code
+
+api-lint:
+  <<: *base_test_api_template
+  script:
+    - echo "Start linters"
+    - echo "--- Check code with ruff [linter] ---"
+    - uv run ruff check --no-cache
+    - echo "--- Check code with ruff [format] ---"
+    - uv run ruff format --no-cache --diff
+
+api-test:
+  <<: *base_test_api_template
+  services:
+    - name: postgres:17
+      # https://www.postgresql.org/docs/17/non-durability.html
+      command: [ "postgres", "-c", "fsync=off", "-c", "jit=off", "-c", "full_page_writes=off", "-c", "effective_io_concurrency=100", "-c", "random_page_cost=1.1" ]
+  variables:
+    POSTGRES_DB: kazgirls
+    POSTGRES_USER: test
+    POSTGRES_PASSWORD: test
+    DEBUG: '0'
+    DATABASE_TEST_URL: 'postgres://test:test@postgres/kazgirls'
+  script:
+    - make test-cov
+  coverage: '/\d+\.\d+%/'
+
+.base_test_frontend_template: &base_test_frontend_template
+  stage: test
+  image: node:20
+  interruptible: true
+  before_script:
+    - cd frontend
+  script:
+    - npm install
+    - npm run lint
+    - npm run type-check
+    - npm run beauty:check
+
+
+frontend-test DEV:
+  <<: *base_test_frontend_template
+  needs:
+    - build-frontend-dev
+
+frontend-test PROD:
+  <<: *base_test_frontend_template
+  only:
+    - master
+  needs:
+    - build-frontend-prod
+
+
+.base_deploy_DeV_template: &base_deploy_DeV_template
+  image: $ALPINSIBLE
+  when: manual
+  stage: deploy
+  before_script:
+    - mkdir -p ~/.ssh
+    - echo -e "$DEV_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\tPort 22\n\tUser $DEV_USERNAME\n\n" > ~/.ssh/config'
+  script:
+    - echo "Deploy to server (date $(date)); Current version is ${VERSION_PUB}"
+    - ssh ${DEV_HOST} "docker system prune -f -a"
+    - scp ./docker-compose.dev.yml ${DEV_HOST}:~/docker-kazgirls-compose.yml
+    - ssh ${DEV_HOST} "echo -e \"CI_COMMIT_SHA=${CI_COMMIT_SHA}\n${DEV_DOCKER_COMPOSE_ENV_LIST}\" > kazgirls-api-docker.env"
+    - ssh ${DEV_HOST} "echo -e \"CI_COMMIT_SHA=${CI_COMMIT_SHA}\n${DEV_DOCKER_FRONTEND_COMPOSE_ENV_LIST}\" > kazgirls-frontend-docker.env"
+    - ssh ${DEV_HOST} "docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}"
+    - ssh ${DEV_HOST} "docker pull ${DOCKER_IMAGE_PATH}/${APP_API}:${VERSION_PUB}"
+    - ssh ${DEV_HOST} "sudo docker tag ${DOCKER_IMAGE_PATH}/${APP_API}:${VERSION_PUB} ${CI_PROJECT_NAME}-api"
+    - ssh ${DEV_HOST} "docker-compose -f ~/docker-kazgirls-compose.yml up -d ${CI_PROJECT_NAME}-api"
+    - >
+      if [[ "$USE_MIGRATION" == "1" ]]; then
+        ssh ${DEV_HOST} "docker-compose -f ~/docker-kazgirls-compose.yml run ${CI_PROJECT_NAME}-migrate"
+      fi;
+    - ssh ${DEV_HOST} "docker pull ${DOCKER_IMAGE_PATH}/${APP_FRONTEND}:${VERSION_DEV}"
+    - ssh ${DEV_HOST} "sudo docker tag ${DOCKER_IMAGE_PATH}/${APP_FRONTEND}:${VERSION_DEV} ${CI_PROJECT_NAME}-frontend"
+    - ssh ${DEV_HOST} "docker-compose -f ~/docker-kazgirls-compose.yml up -d ${CI_PROJECT_NAME}-frontend"
+
+deploy Dev:
+  <<: *base_deploy_DeV_template
+  variables:
+    USE_MIGRATION: "1"
+
+deploy Dev Without Migration:
+  <<: *base_deploy_DeV_template
+  variables:
+    USE_MIGRATION: "0"
+
+deploy Prod:
+  image: $ALPINSIBLE
+  when: manual
+  stage: deploy
+  environment:
+    name: prod
+  only:
+    - master
+  before_script:
+    - mkdir -p ~/.ssh
+    - echo -e "${PROD_PRIVATE_KEY}" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\tPort 22\n\tUser $PROD_USERNAME\n\n" > ~/.ssh/config'
+  script:
+    - echo "Deploy to server (date $(date)); Current version is ${VERSION_PUB}"
+    - ssh ${PROD_HOST} "docker system prune -f -a"
+    - scp ./docker-compose.prod.yml ${PROD_HOST}:~/docker-compose.yml
+    - ssh ${PROD_HOST} "echo -e \"CI_COMMIT_SHA=${CI_COMMIT_SHA}\n${PROD_DOCKER_COMPOSE_ENV_LIST}\" > kazgirls-api-docker.env"
+    - ssh ${PROD_HOST} "echo -e \"CI_COMMIT_SHA=${CI_COMMIT_SHA}\n${PROD_DOCKER_FRONTEND_COMPOSE_ENV_LIST}\" > kazgirls-frontend-docker.env"
+    - ssh ${PROD_HOST} "docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}"
+    - ssh ${PROD_HOST} "docker pull ${DOCKER_IMAGE_PATH}/${APP_API}:${VERSION_PUB}"
+    - ssh ${PROD_HOST} "sudo docker tag ${DOCKER_IMAGE_PATH}/${APP_API}:${VERSION_PUB} ${CI_PROJECT_NAME}-api"
+    - ssh ${PROD_HOST} "docker compose -f ~/docker-compose.yml up -d ${CI_PROJECT_NAME}-api"
+    - ssh ${PROD_HOST} "docker compose -f ~/docker-compose.yml run ${CI_PROJECT_NAME}-migrate"
+    - ssh ${PROD_HOST} "docker pull ${DOCKER_IMAGE_PATH}/${APP_FRONTEND}:${VERSION_PROD}"
+    - ssh ${PROD_HOST} "sudo docker tag ${DOCKER_IMAGE_PATH}/${APP_FRONTEND}:${VERSION_PROD} ${CI_PROJECT_NAME}-frontend"
+    - ssh ${PROD_HOST} "docker compose -f ~/docker-compose.yml up -d ${CI_PROJECT_NAME}-frontend"
+
+
+Remove build images:
+  before_script:
+    - docker info
+    - docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+  stage: cleanup
+  script:
+    - docker rmi -f ${DOCKER_IMAGE_PATH}/${APP_TEST}:${VERSION_LINT}
+
+Clean gitlab trash:
+  stage: cleanup
+  when: manual
+  script:
+    - docker system prune -f -a

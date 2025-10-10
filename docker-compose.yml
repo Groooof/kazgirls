@@ -1,0 +1,64 @@
+services:
+  kazgirls-frontend:
+    container_name: kazgirls-frontend
+    hostname: kazgirls-frontend
+    build:
+      context: ./frontend
+      dockerfile: .docker/Dockerfile
+      target: nginx-local
+    env_file:
+      - frontend/.docker/docker.env
+    ports:
+      - "80:80"
+
+  kazgirls-api:
+    container_name: kazgirls-api
+    hostname: kazgirls-api
+    build:
+      context: ./api
+      dockerfile: .docker/Dockerfile
+      target: api-local
+    env_file:
+      - api/.docker/docker.env
+    ports:
+      - "8002:8002"
+
+  kazgirls-redis:
+    container_name: kazgirls-redis
+    restart: always
+    image: redis:8.0.2
+    hostname: kazgirls-redis
+    command: redis-server --requirepass kazgirls
+    ports:
+      - "6666:6379"
+
+  test-api:
+    container_name: test-api
+    build:
+      context: ./api
+      dockerfile: .docker/Dockerfile
+      target: api-test
+
+  kazgirls-db:
+    container_name: kazgirls-database
+    hostname: kazgirls-db
+    restart: always
+    image: postgres:17
+    ports:
+      - "5411:5432"
+    volumes:
+      - ./docker-data/kazgirlsdb-data:/var/lib/postgresql/data
+      - ./docker-data/kazgirlsdb-logs:/var/log/postgresql
+
+  kazgirls-migrate:
+    image: kazgirls-api
+    container_name: kazgirls-migrate
+    entrypoint: alembic upgrade head
+    depends_on:
+      - kazgirls-db
+    env_file:
+      - api/.docker/docker.env
+    build:
+      context: ./api
+      dockerfile: .docker/Dockerfile
+      target: api-local

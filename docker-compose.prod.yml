@@ -1,0 +1,39 @@
+services:
+  kazgirls-frontend:
+    image: kazgirls-frontend
+    container_name: kazgirls-frontend
+    hostname: kazgirls-frontend
+    env_file:
+      - kazgirls-frontend-docker.env
+    ports:
+      - "80:80"
+    depends_on:
+      - kazgirls-api
+
+  kazgirls-api:
+    image: kazgirls-api
+    container_name: kazgirls-api
+    hostname: kazgirls-api
+    env_file:
+      - kazgirls-api-docker.env
+    ports:
+      - "8002:8002"
+    volumes:
+      - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
+      - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    depends_on:
+      - kazgirls-redis
+
+  kazgirls-redis:
+    image: redis:8.0.2
+    container_name: kazgirls-redis
+    hostname: kazgirls-redis
+    ports:
+      - "6666:6379"
+
+  kazgirls-migrate:
+    image: kazgirls-api
+    container_name: kazgirls-migrate
+    entrypoint: alembic upgrade head
+    env_file:
+      - kazgirls-api-docker.env

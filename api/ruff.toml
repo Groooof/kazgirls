@@ -1,0 +1,78 @@
+target-version = "py313"
+extend-exclude = [
+    ".venv",
+    "run.py",
+    "migrations/env.py",
+    "**/*shell.py",
+]
+force-exclude = true
+line-length = 120
+
+[format]
+# Use double quotes for strings, like Black.
+quote-style = "double"
+
+# Indent with spaces, rather than tabs, like Black.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+
+[lint]
+# Descripte all Ruff rules from `select` block under
+# ERA - Comment out code
+# C4 - flake8-comprehensions | https://docs.astral.sh/ruff/rules/#flake8-comprehensions-c4
+# T20 - print in code |  https://docs.astral.sh/ruff/rules/#flake8-print-t20
+# SIM - code that can be simplified | https://docs.astral.sh/ruff/rules/#flake8-simplify-sim
+# C90 - McCabe checker | https://docs.astral.sh/ruff/rules/#mccabe-c90
+# ASYNC - flake8-async | https://docs.astral.sh/ruff/rules/#flake8-async-async
+# UP - automatically check syntax for newer versions. | https://docs.astral.sh/ruff/rules/#warning-plw
+# A - flake8-builtins | https://docs.astral.sh/ruff/rules/#flake8-builtins-a
+# E - pycodestyle | https://docs.astral.sh/ruff/rules/#pycodestyle-e-w
+# F - pyflakes | https://docs.astral.sh/ruff/rules/#pyflakes-f
+# I - isort | https://docs.astral.sh/ruff/rules/#isort-i
+# S - flake8-bandit | https://docs.astral.sh/ruff/rules/#flake8-bandit-s
+# W - warnings | https://docs.astral.sh/ruff/rules/#warning-w
+# G - flake8-logging-format | https://docs.astral.sh/ruff/rules/#flake8-logging-format-g
+# LOG - flake8-logging | https://docs.astral.sh/ruff/rules/#flake8-logging-log
+select = [
+    "ERA",
+    "C4",
+    "T20",
+    "SIM",
+    "C90",
+    "UP",
+    "ASYNC",
+    "A",
+    "E",
+    "F",
+    "I",
+    "S",
+    "W",
+    "G",
+    "LOG",
+]
+
+# SIM108 | https://docs.astral.sh/ruff/rules/if-else-block-instead-of-if-exp/
+ignore = ["SIM108"]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+logger-objects = ["loguru.logger"]
+
+[lint.isort]
+case-sensitive = true
+combine-as-imports = true
+
+
+[lint.extend-per-file-ignores]
+# Also ignore `E402` in all `__init__.py` files.
+"**/__init__.py" = ["E402", "F401", "F403"]
+"**/tests/**" = ["ERA001", "S101"]
+"**/repository/bases*.py" = ["ASYNC109"]

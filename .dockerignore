@@ -1,0 +1,17 @@
+.idea/
+.vscode/
+env
+venv
+*,cover
+test.py
+Dockerfile
+.gitignore
+README.md
+docker-compose.yml
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.gitlab/
+deploy/

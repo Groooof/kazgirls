@@ -1,0 +1,49 @@
+{% extends "admin/base_layout.html" %}
+{% block content %}
+<div class="row align-items-center mt-3">
+  <div class="col">
+    <h2 class="page-title">Settings</h2>
+  </div>
+  <div class="overflow-auto">
+    <div class="table-responsive mt-2">
+      <table
+          class="table table-vcenter table-hover">
+        <thead>
+        <tr>
+          <th>Description</th>
+          <th>Value</th>
+          <th>Default</th>
+        </tr>
+        </thead>
+        {% for title, constances in constances.items() %}
+
+        <thead>
+        <tr>
+          <th colspan="3">{{ title }}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for constance in constances %}
+        <tr>
+          <td>{{ constance.title }}<br><span class="text-muted">{{ constance.key }}</span></td>
+          <td>
+            {% if constance.choice_label %}
+            <strong>{{ constance.choice_label }}</strong><br><span class="text-muted">{{ constance.value }}</span>
+            {% else %}
+            <strong>{{ constance.value }}</strong>
+            {% endif %}
+          </td>
+          <td class="text-muted"><a href="#" class="text-reset">{{ constance.default_value }}</a>
+          </td>
+
+        </tr>
+        {% endfor %}
+        </tbody>
+
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

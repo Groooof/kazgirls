@@ -1,0 +1,67 @@
+@use 'reset';
+@import '../fonts/Montserrat/stylesheet.css';
+
+#app {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background-color: #fff;
+  color: var(--color-text);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-weight: bold;
+  font-style: normal;
+  color: var(--color-text-header);
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.2;
+
+  @media (min-width: $lg) {
+    font-size: 49px;
+  }
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 1.2;
+  @media (min-width: $md) {
+    font-size: 26px;
+    line-height: 1.3;
+  }
+}
+
+.container {
+  max-width: 640px;
+
+  margin: 0 auto;
+  padding: 0 20px;
+
+  @media (min-width: $xs) {
+  }
+
+  @media (min-width: $md) {
+    max-width: 1200px;
+    padding: 0 20px;
+  }
+}
+
+a {
+  transition: all 0.3s ease;
+
+  &:hover {
+    color: var(--color-primary);
+  }
+}
+
+.error {
+  color: var(--color-red);
+}

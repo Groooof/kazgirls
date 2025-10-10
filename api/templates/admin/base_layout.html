@@ -1,0 +1,15 @@
+{% extends "sqladmin/layout.html" %}
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">Admin Panel</h2>
+  </div>
+  <div class="col-12 col-md-auto ms-auto d-print-none">
+    <div class="btn-list">
+      <span class="d-none d-sm-inline">
+        <a href="{{ url_for('admin:logout') }}" class="btn btn-white">Exit</a>
+      </span>
+    </div>
+  </div>
+</div>
+{% endblock %}

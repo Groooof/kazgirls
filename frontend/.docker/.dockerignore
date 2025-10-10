@@ -1,0 +1,7 @@
+*/node_modules
+.vite
+*.docker/Dockerfile
+*/test-results
+README.md
+
+*.env
