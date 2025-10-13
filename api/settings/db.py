@@ -31,7 +31,4 @@ ENGINE_CONFIG = {
 
 engines: dict[str, AsyncEngine] = {
     EngineTypeEnum.DEFAULT_ENGINE: create_async_engine(convert_posgres_url(databases.database_url), **ENGINE_CONFIG),
-    EngineTypeEnum.REQUEST_LOG_ENGINE: create_async_engine(
-        convert_posgres_url(databases.request_log_database_url), **ENGINE_CONFIG
-    ),
 }

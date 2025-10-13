@@ -181,3 +181,4 @@ cython_debug/
 /api/.docker/docker.env
 shell.py
 shell*.py
+.vscode/

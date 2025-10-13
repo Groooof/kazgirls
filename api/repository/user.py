@@ -1,7 +1,7 @@
 from sqlalchemy.exc import MultipleResultsFound, NoResultFound
 from sqlalchemy.orm import contains_eager
 
-from exceptions.bases import DoesNotExist, MultipleObjectsReturned
+from exceptions.db import DoesNotExist, MultipleObjectsReturned
 from models.user import User, UserSession
 from repository.bases import BaseSQLRepository
 from schemas.auth import TokenTypesChoices
