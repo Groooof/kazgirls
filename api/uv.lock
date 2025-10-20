@@ -1,6 +1,6 @@
 version = 1
 revision = 3
-requires-python = "==3.13.8"
+requires-python = "==3.13.7"
 
 [[package]]
 name = "aiobotocore"
@@ -692,7 +692,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
-    { name = "python-socketio" },
+    { name = "python-socketio", extra = ["asyncio-client"] },
     { name = "redis" },
     { name = "scalar-fastapi" },
     { name = "sentry-sdk", extra = ["fastapi"] },
@@ -751,7 +751,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = "~=2.10" },
     { name = "pyjwt", specifier = "~=2.10" },
     { name = "python-dotenv", specifier = "~=1.0" },
-    { name = "python-socketio", specifier = ">=5.14.1" },
+    { name = "python-socketio", extras = ["asyncio-client"], specifier = ">=5.14.1" },
     { name = "redis", specifier = "~=6.4" },
     { name = "scalar-fastapi", specifier = "~=1.3" },
     { name = "sentry-sdk", extras = ["fastapi"], specifier = "~=2.17" },
@@ -1238,6 +1238,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/05/c2/a9ae3d0eb4488748a2d9c15defddb7277a852234e29e50c73136834dff1b/python_socketio-5.14.1.tar.gz", hash = "sha256:bf49657073b90ee09e4cbd6651044b46bb526694276621e807a1b8fcc0c1b25b", size = 123068, upload-time = "2025-10-02T18:44:54.467Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/5e/302c3499a134a52b68e4e6fb345cea52ab1c41460949bcdb09f8bd0e3594/python_socketio-5.14.1-py3-none-any.whl", hash = "sha256:3419f5917f0e3942317836a77146cb4caa23ad804c8fd1a7e3f44a6657a8406e", size = 78496, upload-time = "2025-10-02T18:44:52.649Z" },
+]
+
+[package.optional-dependencies]
+asyncio-client = [
+    { name = "aiohttp" },
 ]
 
 [[package]]

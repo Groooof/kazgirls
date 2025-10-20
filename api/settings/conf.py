@@ -41,12 +41,11 @@ class Settings(CustomBaseSettings):
     sentry_url: str = ""
     log_level: str = "info" if server_role == ServerRole.prod else "debug"
     serialize_logs: bool = False
-    local_log_path: str = "/var/log/kazgirls/"
+    local_log_path: str = ""
     use_tracemalloc: bool = False
     echo_sql: bool = False
 
     app_reload: bool = server_role != ServerRole.prod
-    domain_host: str
     frontend_host: str = "https://link.kazgirls.com"
 
     @property
@@ -74,6 +73,7 @@ class Databases(CustomBaseSettings):
     is_sqlite: bool = False
 
     arq_redis_url: RedisDsn = "redis://default:vuop7Aithohw@127.0.0.1:6666/1"
+    sockets_redis_url: RedisDsn = "redis://default:vuop7Aithohw@127.0.0.1:6666/0"
     redis_url: RedisDsn = "redis://default:vuop7Aithohw@127.0.0.1:6666/0"
     fake_redis: bool = False
 

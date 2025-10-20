@@ -5,6 +5,7 @@ from datetime import UTC
 from typing import Any
 
 import fakeredis.aioredis
+import socketio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
@@ -24,9 +25,11 @@ from starlette.templating import Jinja2Templates
 from admin.bases import CustomAdmin, authentication_backend
 from app_logging import init_sentry, set_logging_config
 from dependencies.db import EngineTypeEnum, _get_db, engines
+from dependencies.sockets import server as sio
 from endpoints import external_api_router, internal_api_router
 from exceptions.bases import LogicException
 from settings.conf import databases, settings
+from sockets import *  # noqa: F403
 from utils.handlers import any_exception_handler, logic_exception_handler, unhandled_validation_exception_handler
 from utils.middleware import TracemallocMiddleware
 
@@ -89,10 +92,7 @@ def init_templates() -> Jinja2Templates:
 
 
 def init_scheduler():
-    from app_scheduled_job import check_connection_example_job
-
     scheduler = AsyncIOScheduler(timezone=UTC)
-    scheduler.add_job(check_connection_example_job, "interval", minutes=1, max_instances=1)
     return scheduler
 
 
@@ -170,6 +170,10 @@ def init_app():
     return app
 
 
+def init_sockets_app(fastapi_app):
+    return socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
+
+
 def get_app() -> FastAPI:
     set_logging_config()
 
@@ -185,5 +189,5 @@ def get_app() -> FastAPI:
         db=_get_db,
         authentication_backend=authentication_backend,
     )
-
-    return app
+    sockets_app = init_sockets_app(app)
+    return sockets_app
