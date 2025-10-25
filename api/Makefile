@@ -7,6 +7,9 @@ migrations:
 migrate:
 	alembic upgrade head
 
+sync:
+	uv sync --group=local --frozen
+
 test:
 	uv run pytest -n 4
 
