@@ -48,7 +48,10 @@ services:
       - "5411:5432"
     volumes:
       - ./docker-data/kazgirlsdb-data:/var/lib/postgresql/data
-      - ./docker-data/kazgirlsdb-logs:/var/log/postgresql
+    environment:
+      - POSTGRES_DB=kazgirls
+      - POSTGRES_USER=kazgirls
+      - POSTGRES_PASSWORD=kazgirls
 
   kazgirls-migrate:
     image: kazgirls-api
