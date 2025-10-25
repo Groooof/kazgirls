@@ -1,29 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomePage from '@/views/HomePage.vue'
 import NotFound from '@/views/NotFound.vue'
-import ConfirmPage from '@/views/ConfirmPage.vue'
-import PaymentFailed from '@/views/PaymentFailed.vue'
+import Streamer from '@/views/Streamer.vue'
+import Viewer from '@/views/Viewer.vue'
 
 const routes = [
   {
-    path: '/confirm',
-    name: 'Confirm',
-    component: ConfirmPage,
+    path: '/streamers/:id/stream',
+    name: 'Streamer',
+    component: Streamer,
   },
   {
-    path: '/:token',
-    name: 'Home',
-    component: HomePage,
-  },
-  {
-    path: '/:token',
-    name: 'Home',
-    component: HomePage,
-  },
-  {
-    path: '/payment',
-    name: 'Payment',
-    component: PaymentFailed,
+    path: '/streamers/:id/view',
+    name: 'Viewer',
+    component: Viewer,
   },
   {
     path: '/:pathMatch(.*)*',

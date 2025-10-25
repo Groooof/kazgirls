@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import AppNotification from '@/components/UI/AppNotification/AppNotification.vue'
-import AppHeader from '@/components/Header/AppHeader.vue'
-import AppFooter from '@/components/Footer/AppFooter.vue'
 import AppPageLoaderOverlay from '@/components/UI/AppPageLoaderOverlay/AppPageLoaderOverlay.vue'
 import { onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
@@ -17,12 +15,9 @@ onMounted(async () => {
 <template>
   <AppPageLoaderOverlay v-if="!appStore.fontsLoaded" />
   <template v-else>
-    <AppHeader />
     <main>
       <router-view />
     </main>
-    <AppFooter />
-    <AppNotification />
   </template>
 </template>
 
