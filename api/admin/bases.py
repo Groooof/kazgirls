@@ -4,7 +4,6 @@ from typing import Any, cast, no_type_check
 
 import pytz
 from fastapi import Request
-from jwt import ExpiredSignatureError, InvalidSignatureError
 from sqladmin import Admin, BaseView, ModelView
 from sqladmin.authentication import AuthenticationBackend, login_required
 from sqladmin.formatters import BASE_FORMATTERS
@@ -16,10 +15,8 @@ from sqlalchemy.orm import InstrumentedAttribute, Mapper, selectinload
 from starlette.responses import RedirectResponse, Response
 
 from dependencies.db import EngineTypeEnum, _get_db, engines
-from exceptions.auth import BaseAuthException, CredentialsException
-from logic.auth import get_user_by_session_token, login_user_by_password, logout_user
-from models.user import User
-from schemas.auth import LoginSchema
+from exceptions.auth import CredentialsException
+from logic.auth import get_user_by_token, login_user_by_password, logout_user
 from settings.conf import other_settings, settings
 
 
@@ -34,11 +31,6 @@ class AdminBackend(AuthenticationBackend):
         super().__init__(secret_key)
         self.engine = engine
 
-    async def get_user(self, token: str) -> User:
-        async with _get_db() as db:
-            user = await get_user_by_session_token(db, token)
-        return user
-
     async def login(self, request: Request) -> bool | RedirectResponse:  # type: ignore
         form = await request.form()
         username, password = form["username"], form["password"]
@@ -49,10 +41,8 @@ class AdminBackend(AuthenticationBackend):
 
         try:
             async with _get_db() as db:
-                token = await login_user_by_password(
-                    db=db, data=LoginSchema(username=username, password=password), response=None
-                )
-                request.session.update({"token": token.access_token})
+                token = await login_user_by_password(db, username, password)
+                request.session.update({"token": token})
                 return True
         except CredentialsException:
             return False
@@ -67,12 +57,12 @@ class AdminBackend(AuthenticationBackend):
 
     async def authenticate(self, request: Request) -> bool | RedirectResponse:
         token = request.session.get("token")
-        if token:
-            try:
-                user = await self.get_user(token)
-                return user.is_superuser
-            except (InvalidSignatureError, ExpiredSignatureError, BaseAuthException):
-                pass
+        async with _get_db() as db:
+            user = token and await get_user_by_token(db, token)
+
+        if user and user.is_superuser:
+            return True
+
         return RedirectResponse(request.url_for("admin:login"), status_code=302)
 
 

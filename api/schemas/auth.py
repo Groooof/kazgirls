@@ -1,25 +1,10 @@
-from schemas.bases import SchemeBase, TextChoices
-
-type Timestamp = int
-type Username = str
+from schemas.bases import SchemeBase
 
 
-class TokenTypesChoices(TextChoices):
-    session = "session", "Session"  # Frontend Session
-    api = "api", "API"  # Авторизация по заголовку
-
-
-class AccessTokenSchema(SchemeBase):
+class LoginResponseSchema(SchemeBase):
     access_token: str
 
 
-class JWTSessionPayloadSchema(SchemeBase):
-    sub: Username
-    user_id: int
-    token_type: TokenTypesChoices
-    exp: Timestamp | None = None
-
-
-class LoginSchema(SchemeBase):
-    username: Username
+class LoginRequestSchema(SchemeBase):
+    username: str
     password: str

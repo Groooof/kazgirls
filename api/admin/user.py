@@ -16,11 +16,14 @@ class UserAdmin(BaseModelView, model=User):
         User.username.key,
         User.password.key,
         User.name.key,
+        User.is_streamer.key,
         User.is_superuser.key,
     ]
     form_edit_rules = [
         User.username.key,
         User.name.key,
+        User.is_streamer.key,
+        User.is_superuser.key,
         User.is_active.key,
     ]
 

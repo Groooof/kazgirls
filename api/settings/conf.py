@@ -1,3 +1,4 @@
+from datetime import timedelta
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -58,8 +59,9 @@ class Settings(CustomBaseSettings):
 
 
 class OtherSettings(CustomBaseSettings):
-    jwt_algorithm: str = "HS256"
     jwt_secret: str = "test"  # noqa: S105
+    users_session_ttl: timedelta = timedelta(days=30)
+    access_token_cookie_name: str = "access_token"  # noqa: S105
     default_timezone: str = "Europe/Moscow"
     default_dt_format: str = "%d/%m/%Y, %I:%M %p"
 

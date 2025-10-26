@@ -25,8 +25,28 @@ async def catch_all(event, namespace=None, data=None):
     print(f"Data: {data}")
 
 
+@sio.event(namespace="/streamers")
+async def connect_error(data):
+    print("❌ Ошибка при подключении:", data)
+
+
+from socketio.exceptions import ConnectionError
+
+
 async def main():
-    await sio.connect("http://localhost:8000/?room_id=qwerty123", namespaces=["/streamers"], auth={"token": "123"})
+    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiaWF0IjoxNzYxNTA1NjUzLCJleHAiOjE3NjQwOTc2NTN9.RmvpIYfrEFUJPP_w9z0qPQjFrTcPXS0r0yuQXuhuFz4"
+    try:
+        await sio.connect(
+            "http://localhost:8000/?streamer_id=qwerty123",
+            namespaces=["/streamers"],
+            auth={"token": token},
+            transports=["websocket"],
+            headers={"Cookie": "csrftoken=NtiymjcJsSFuAjo40mRDlqP2alwwuohF;"},
+        )
+    except ConnectionError:
+        print("Ошибка подключения")
+        return
+
     print("👂 Listening for messages...")
     await asyncio.sleep(999999)  # слушаем бесконечно
     await sio.disconnect()

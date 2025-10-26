@@ -1,17 +1,10 @@
-import uuid
 from datetime import datetime
 
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql.sqltypes import BigInteger, Integer, String
-from uuid_extensions import uuid7
+from sqlalchemy.sql.sqltypes import BigInteger, Integer
 
-from models.bases import (
-    BaseIdMixin,
-    BaseSQLAlchemyModel,
-    DateFieldsMixin,
-)
-from schemas.auth import TokenTypesChoices
+from models.bases import BaseIdMixin, BaseSQLAlchemyModel, DateFieldsMixin
 
 
 class User(BaseIdMixin[Integer], DateFieldsMixin, BaseSQLAlchemyModel):
@@ -36,11 +29,9 @@ class UserSession(BaseIdMixin[BigInteger], DateFieldsMixin, BaseSQLAlchemyModel)
     __engine__ = "default"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    session_key: Mapped[uuid.UUID] = mapped_column(index=True, default=uuid7)
     token: Mapped[str]
-    expired: Mapped[datetime | None] = mapped_column(nullable=True, doc="NULL for session")
+    expired: Mapped[datetime] = mapped_column()
     is_active: Mapped[bool] = mapped_column(default=True)
-    token_type: Mapped[TokenTypesChoices] = mapped_column(String(50), default=TokenTypesChoices.session)
 
     user: Mapped["User"] = relationship()
 

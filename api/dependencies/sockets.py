@@ -8,4 +8,5 @@ server = socketio.AsyncServer(
     cors_allowed_origins="*",
     logger=False,
     engineio_logger=False,
+    transports=["websocket"],
 )

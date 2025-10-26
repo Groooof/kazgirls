@@ -24,8 +24,3 @@ class UserNotFound(BaseAuthException):
 class CredentialsException(BaseAuthException):
     def __init__(self, message: str):
         super().__init__(http_status=status.HTTP_401_UNAUTHORIZED, message=message)
-
-
-class JWTDecodingError(LogicException):
-    def __init__(self, message: str):
-        super().__init__(http_status=status.HTTP_401_UNAUTHORIZED, message=message)

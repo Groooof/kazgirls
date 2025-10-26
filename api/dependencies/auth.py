@@ -1,54 +1,33 @@
 from fastapi import Depends
 from fastapi.params import Security
-from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
-from loguru import logger
+from fastapi.security import APIKeyCookie
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db
-from exceptions.auth import CredentialsException, InvalidTokenError
+from exceptions.auth import CredentialsException
 from models.user import User
-from schemas.auth import TokenTypesChoices
-from services.auth import AuthTokenService
+from services.auth import UserSessionService
+from services.jwt import JwtTokenService
+from settings import conf
 
-cookie_session = APIKeyCookie(name=AuthTokenService.COOKIE_NAME, auto_error=False)
-bearer_token = HTTPBearer(auto_error=False)
-
-
-async def get_current_active_user(
-    session_key: str | None = Security(cookie_session),
-    bearer_data: HTTPAuthorizationCredentials | None = Security(bearer_token),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    logger.debug("Session By Cookies: {}", session_key)
-    logger.debug("Session By Header: {}", bearer_data)
-
-    auth_service = AuthTokenService(db)
-    if session_key:
-        logger.debug("User by session: {}", session_key)
-        user = await auth_service.get_user_by_token(session_key, TokenTypesChoices.session)
-    elif bearer_data:
-        logger.debug("User by bearer: {}", bearer_data)
-        user = await auth_service.get_user_by_token(bearer_data.credentials, TokenTypesChoices.api)
-    else:
-        raise CredentialsException(message="No session key")
-
-    return user
+cookie_session = APIKeyCookie(name=conf.other_settings.access_token_cookie_name, auto_error=False)
 
 
-async def get_current_active_superuser(
-    session_key: str | None = Security(cookie_session),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    logger.debug("Session By Cookies: {}", session_key)
+async def get_access_token(token: str | None = Security(cookie_session)) -> str:
+    if not token:
+        raise CredentialsException(message="No access token")
 
-    if not session_key:
-        raise CredentialsException(message="No session key")
+    jwt_service = JwtTokenService()
+    payload = jwt_service.decode_token(token, conf.other_settings.jwt_secret, suppress=True)
+    if not payload:
+        raise CredentialsException(message="Invalid token")
 
-    auth_service = AuthTokenService(db)
+    return token
 
-    logger.debug("Superuser by session: {}", session_key)
-    user = await auth_service.get_user_by_token(session_key, TokenTypesChoices.session)
-    if not user.is_superuser:
-        raise InvalidTokenError
 
+async def get_current_active_user(db: AsyncSession = Depends(get_db), token: str = Depends(get_access_token)) -> User:
+    session_service = UserSessionService(db)
+    user = await session_service.get_user(token)
+    if not user:
+        raise CredentialsException(message="Invalid token")
     return user

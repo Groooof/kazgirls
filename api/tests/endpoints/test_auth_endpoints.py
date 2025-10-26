@@ -1,7 +1,7 @@
 from fastapi import status
 from httpx import AsyncClient
 
-from services.auth import AuthTokenService
+from settings import conf
 
 
 async def test_user(client: AsyncClient):
@@ -39,6 +39,6 @@ async def test_user(client: AsyncClient):
     response = await client.get("/tokens/me", headers=headers)
     assert response.status_code == status.HTTP_401_UNAUTHORIZED, response.text
 
-    response = await client.get("/tokens/me", cookies={AuthTokenService.COOKIE_NAME: token})
+    response = await client.get("/tokens/me", cookies={conf.other_settings.access_token_cookie_name: token})
     assert response.status_code == status.HTTP_200_OK, response.text
     assert response.json() == {"id": 1, "username": "user", "is_superuser": False}

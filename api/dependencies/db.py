@@ -1,7 +1,8 @@
 import inspect
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from functools import lru_cache
+from functools import lru_cache, wraps
+from typing import Any
 
 from sqlalchemy.ext.asyncio.session import AsyncSession, async_sessionmaker
 
@@ -36,3 +37,15 @@ async def _get_db(*args, use_default: bool = False) -> AsyncIterator[AsyncSessio
     async with AsyncSession(bind=bind, binds=get_binds(), expire_on_commit=False) as session:  # noqa: SIM117
         async with session.begin():
             yield session
+
+
+def with_db(use_default: bool = False):
+    def decorator(func: Callable[..., Any]):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            async with _get_db(use_default=use_default) as db:
+                return await func(*args, db=db, **kwargs)
+
+        return wrapper
+
+    return decorator

@@ -1,6 +1,10 @@
 from urllib.parse import parse_qs
 
+from socketio.exceptions import ConnectionRefusedError as SocketIOConnectionRefusedError
+
+from dependencies.db import with_db
 from dependencies.sockets import server as sio
+from logic.auth import get_user_by_token
 
 namespace = "/streamers"
 
@@ -17,15 +21,22 @@ def get_room_name(streamer_id: str) -> str:
 
 
 @sio.event(namespace=namespace)
-async def connect(sid, environ, auth):
+@with_db()
+async def connect(sid, environ, auth, db):
     streamer_id = get_query_param(environ, "streamer_id")
     if not streamer_id:
-        await sio.emit("connect:error", to=sid, namespace=namespace)
-        await sio.disconnect(sid, namespace=namespace)  # ?
-        return False
+        raise ConnectionRefusedError("NO_STREAMER_ID")
+
+    token = auth.get("token")
+    user = token and await get_user_by_token(db, token)
+    if not user:
+        raise SocketIOConnectionRefusedError("INVALID_TOKEN")
+
+    print(user)
 
     room_name = get_room_name(streamer_id)
-    await sio.save_session(sid, {"streamer_id": streamer_id}, namespace)
+    session = {"user": user, "streamer_id": streamer_id}
+    await sio.save_session(sid, session, namespace)
     await sio.enter_room(sid, room_name, namespace=namespace)
     await sio.emit("connect:ok", to=sid, namespace=namespace)
     print(f"✅ Connected {sid} -> room {room_name}")
