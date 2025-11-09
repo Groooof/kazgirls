@@ -52,4 +52,22 @@ async def main():
     await sio.disconnect()
 
 
-asyncio.run(main())
+from redis.asyncio import Redis
+
+from dependencies.redis import with_redis
+from utils.libs import utc_now
+
+
+@with_redis()
+async def main2(redis: Redis):
+    now_ts = int(utc_now().timestamp())
+    await redis.zadd("test:1", {1: now_ts})
+    await redis.zadd("test:1", {2: now_ts})
+    await redis.zadd("test:1", {3: now_ts})
+
+    now_ts = int(utc_now().timestamp())
+    viewers_count = await redis.zrange("test:1", 0, now_ts)
+    print(viewers_count)
+
+
+asyncio.run(main2())

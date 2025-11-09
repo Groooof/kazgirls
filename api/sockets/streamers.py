@@ -1,10 +1,16 @@
 from urllib.parse import parse_qs
 
+from loguru import logger
+from redis.asyncio import Redis
 from socketio.exceptions import ConnectionRefusedError as SocketIOConnectionRefusedError
+from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from dependencies.db import with_db
+from dependencies.redis import with_redis
 from dependencies.sockets import server as sio
+from exceptions.streamers import NoSeatsError
 from logic.auth import get_user_by_token
+from logic.streamers import connect_streamer, connect_viewer, ping_streamer, ping_viewer
 
 namespace = "/streamers"
 
@@ -16,63 +22,108 @@ def get_query_param(environ, name) -> str | None:
     return param_list and param_list[0] or None
 
 
-def get_room_name(streamer_id: str) -> str:
-    return f"room_{streamer_id}"
-
-
 @sio.event(namespace=namespace)
 @with_db()
-async def connect(sid, environ, auth, db):
-    streamer_id = get_query_param(environ, "streamer_id")
-    if not streamer_id:
-        raise ConnectionRefusedError("NO_STREAMER_ID")
-
+@with_redis()
+async def connect(sid, environ, auth, db: AsyncSession, redis: Redis):
     token = auth.get("token")
     user = token and await get_user_by_token(db, token)
     if not user:
+        logger.debug("Invalid token {}", token)
         raise SocketIOConnectionRefusedError("INVALID_TOKEN")
 
-    print(user)
+    streamer_id = get_query_param(environ, "streamer_id")
+    streamer_id = streamer_id and streamer_id.isdigit() and int(streamer_id) or None
+    if not streamer_id:
+        if not user.is_streamer:
+            logger.debug("Common user (id: {}) tried to connect as streamer", user.id)
+            raise SocketIOConnectionRefusedError("FORBIDDEN")
+        streamer_id = user.id
 
-    room_name = get_room_name(streamer_id)
-    session = {"user": user, "streamer_id": streamer_id}
+    is_streamer = streamer_id == user.id
+    if is_streamer:
+        logger.debug("Connecting streamer (id: {})", user.id)
+        await connect_streamer(redis, user, sid)
+    else:
+        try:
+            logger.debug("Connecting viewer (id: {})", user.id)
+            await connect_viewer(redis, user, sid, streamer_id)
+        except NoSeatsError:
+            logger.debug("Can`t connect viewer (id: {}) because streamer (id: {}) haven`t seats", user.id, streamer_id)
+            raise SocketIOConnectionRefusedError("ROOM_FULL")
+
+    session = {"user": user, "streamer_id": streamer_id, "is_streamer": is_streamer}
     await sio.save_session(sid, session, namespace)
-    await sio.enter_room(sid, room_name, namespace=namespace)
     await sio.emit("connect:ok", to=sid, namespace=namespace)
-    print(f"✅ Connected {sid} -> room {room_name}")
+    logger.debug("✅ Connected sid: {}", sid)
     return True
 
 
 @sio.event(namespace=namespace)
 async def disconnect(sid):
-    print("Disconnected:", sid)
     session = await sio.get_session(sid, namespace)
-    if session:
-        room_name = get_room_name(session["streamer_id"])
-        await sio.leave_room(sid, room_name, namespace=namespace)
-        print(f"Left room {room_name}")
+    user = session["user"]
+    streamer_id = session["streamer_id"]
+    is_streamer = session["is_streamer"]
+
+    if is_streamer:
+        logger.debug("Disconnecting streamer (id: {})", user.id)
+    else:
+        logger.debug("Disconnecting viewer (id: {}) from streamer (id: {})", user.id, streamer_id)
+
+    logger.debug("Disconnected sid: {}", sid)
+
+
+@sio.event(namespace=namespace)
+@with_redis()
+async def ping(sid, data, redis: Redis):
+    session = await sio.get_session(sid, namespace)
+    user = session["user"]
+    streamer_id = session["streamer_id"]
+    is_streamer = session["is_streamer"]
+    if is_streamer:
+        logger.debug("Ping streamer (id: {})", user.id)
+        await ping_streamer(redis, user)
+    else:
+        logger.debug("Ping viewer (id: {}) to streamer (id: {})", user.id, streamer_id)
+        await ping_viewer(redis, user, streamer_id)
 
 
 # ----------  WEBRTC SIGNALING  ----------
 @sio.on("webrtc:offer", namespace=namespace)
 async def webrtc_offer(sid, data):
     session = await sio.get_session(sid, namespace)
-    room_name = get_room_name(session["streamer_id"])
-    print(f"[OFFER] from {sid} -> {room_name}")
-    await sio.emit("webrtc:offer", data, room=room_name, skip_sid=sid, namespace=namespace)
+    user = session["user"]
+    is_streamer = session["is_streamer"]
+    if is_streamer:
+        logger.debug("offer from streamer (id: {})", user.id)
+    else:
+        logger.debug("offer from viewer (id: {})", user.id)
+
+    await sio.emit("webrtc:offer", data, skip_sid=sid, namespace=namespace)
 
 
 @sio.on("webrtc:answer", namespace=namespace)
 async def webrtc_answer(sid, data):
     session = await sio.get_session(sid, namespace)
-    room_name = get_room_name(session["streamer_id"])
-    print(f"[ANSWER] from {sid} -> {room_name}")
-    await sio.emit("webrtc:answer", data, room=room_name, skip_sid=sid, namespace=namespace)
+    user = session["user"]
+    is_streamer = session["is_streamer"]
+    if is_streamer:
+        logger.debug("answer from streamer (id: {})", user.id)
+    else:
+        logger.debug("answer from viewer (id: {})", user.id)
+
+    await sio.emit("webrtc:answer", data, skip_sid=sid, namespace=namespace)
 
 
 @sio.on("webrtc:ice", namespace=namespace)
 async def webrtc_ice(sid, data):
     session = await sio.get_session(sid, namespace)
-    room = f"room_{session['streamer_id']}"
-    print(f"[ICE] from {sid} -> {room}")
-    await sio.emit("webrtc:ice", data, room=room, skip_sid=sid, namespace=namespace)
+    user = session["user"]
+    is_streamer = session["is_streamer"]
+    if is_streamer:
+        logger.debug("ice from streamer (id: {})", user.id)
+    else:
+        logger.debug("ice from viewer (id: {})", user.id)
+
+    await sio.emit("webrtc:ice", data, skip_sid=sid, namespace=namespace)

@@ -1,0 +1,2 @@
+class NoSeatsError(Exception):
+    pass
