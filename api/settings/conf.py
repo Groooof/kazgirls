@@ -58,6 +58,11 @@ class Settings(CustomBaseSettings):
         return self.server_role == ServerRole.local
 
 
+class SocketsNamespaces(CustomBaseSettings):
+    streamers: str = "/streamers"
+    lobby: str = "/lobby"
+
+
 class OtherSettings(CustomBaseSettings):
     jwt_secret: str = "test"  # noqa: S105
     users_session_ttl: timedelta = timedelta(days=30)
@@ -90,6 +95,11 @@ def get_settings() -> Settings:
 
 
 @lru_cache
+def get_sockets_namespaces() -> SocketsNamespaces:
+    return SocketsNamespaces()
+
+
+@lru_cache
 def get_other() -> OtherSettings:
     return OtherSettings()
 
@@ -101,4 +111,5 @@ def get_database_settings() -> Databases:
 
 settings: Settings = get_settings()
 other_settings: OtherSettings = get_other()
+sockets_namespaces: SocketsNamespaces = get_sockets_namespaces()
 databases: Databases = get_database_settings()

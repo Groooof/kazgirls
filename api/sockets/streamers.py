@@ -10,9 +10,10 @@ from dependencies.redis import with_redis
 from dependencies.sockets import server as sio
 from exceptions.streamers import NoSeatsError
 from logic.auth import get_user_by_token
-from logic.streamers import connect_streamer, connect_viewer, ping_streamer, ping_viewer
+from logic.streamers import connect_streamer, connect_viewer, get_streamer_room_name, ping_streamer, ping_viewer
+from settings.conf import sockets_namespaces
 
-namespace = "/streamers"
+namespace = sockets_namespaces.streamers
 
 
 def get_query_param(environ, name) -> str | None:
@@ -20,10 +21,6 @@ def get_query_param(environ, name) -> str | None:
     params = parse_qs(query)
     param_list = params.get(name)
     return param_list and param_list[0] or None
-
-
-def get_room_name(streamer_id: int) -> str:
-    return f"room_{streamer_id}"
 
 
 @sio.event(namespace=namespace)
@@ -56,7 +53,7 @@ async def connect(sid, environ, auth, db: AsyncSession, redis: Redis):
             logger.debug("Can`t connect viewer (id: {}) because streamer (id: {}) haven`t seats", user.id, streamer_id)
             raise SocketIOConnectionRefusedError("ROOM_FULL")
 
-    room = get_room_name(streamer_id)
+    room = get_streamer_room_name(streamer_id)
     session = {"user": user, "streamer_id": streamer_id, "is_streamer": is_streamer}
     await sio.save_session(sid, session, namespace)
     await sio.enter_room(sid, room, namespace)
@@ -77,7 +74,7 @@ async def disconnect(sid):
     else:
         logger.debug("Disconnecting viewer (id: {}) from streamer (id: {})", user.id, streamer_id)
 
-    room = get_room_name(streamer_id)
+    room = get_streamer_room_name(streamer_id)
     await sio.leave_room(sid, room, namespace)
     logger.debug("Disconnected sid: {}", sid)
 
@@ -110,7 +107,7 @@ async def webrtc_offer(sid, data):
     else:
         logger.debug("offer from viewer (id: {})", user.id)
 
-    room = get_room_name(streamer_id)
+    room = get_streamer_room_name(streamer_id)
     await sio.emit("webrtc:offer", data, room=room, skip_sid=sid, namespace=namespace)
 
 
@@ -126,7 +123,7 @@ async def webrtc_answer(sid, data):
     else:
         logger.debug("answer from viewer (id: {})", user.id)
 
-    room = get_room_name(streamer_id)
+    room = get_streamer_room_name(streamer_id)
     await sio.emit("webrtc:answer", data, room=room, skip_sid=sid, namespace=namespace)
 
 
@@ -142,5 +139,5 @@ async def webrtc_ice(sid, data):
     else:
         logger.debug("ice from viewer (id: {})", user.id)
 
-    room = get_room_name(streamer_id)
+    room = get_streamer_room_name(streamer_id)
     await sio.emit("webrtc:ice", data, room=room, skip_sid=sid, namespace=namespace)
