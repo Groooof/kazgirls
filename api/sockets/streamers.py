@@ -1,5 +1,3 @@
-from urllib.parse import parse_qs
-
 from loguru import logger
 from redis.asyncio import Redis
 from socketio.exceptions import ConnectionRefusedError as SocketIOConnectionRefusedError
@@ -12,15 +10,9 @@ from exceptions.streamers import NoSeatsError
 from logic.auth import get_user_by_token
 from logic.streamers import connect_streamer, connect_viewer, get_streamer_room_name, ping_streamer, ping_viewer
 from settings.conf import sockets_namespaces
+from utils.libs import get_socketio_query_param as get_query_param
 
 namespace = sockets_namespaces.streamers
-
-
-def get_query_param(environ, name) -> str | None:
-    query = environ.get("QUERY_STRING", "")
-    params = parse_qs(query)
-    param_list = params.get(name)
-    return param_list and param_list[0] or None
 
 
 @sio.event(namespace=namespace)
@@ -44,11 +36,11 @@ async def connect(sid, environ, auth, db: AsyncSession, redis: Redis):
     is_streamer = streamer_id == user.id
     if is_streamer:
         logger.debug("Connecting streamer (id: {})", user.id)
-        await connect_streamer(redis, user, sid)
+        await connect_streamer(redis, user.id, sid)
     else:
         try:
             logger.debug("Connecting viewer (id: {})", user.id)
-            await connect_viewer(redis, user, sid, streamer_id)
+            await connect_viewer(sio, redis, user.id, sid, streamer_id)
         except NoSeatsError:
             logger.debug("Can`t connect viewer (id: {}) because streamer (id: {}) haven`t seats", user.id, streamer_id)
             raise SocketIOConnectionRefusedError("ROOM_FULL")
@@ -89,10 +81,10 @@ async def ping(sid, data, redis: Redis):
 
     if is_streamer:
         logger.debug("Ping streamer (id: {})", user.id)
-        await ping_streamer(redis, user)
+        await ping_streamer(redis, user.id)
     else:
         logger.debug("Ping viewer (id: {}) to streamer (id: {})", user.id, streamer_id)
-        await ping_viewer(redis, user, streamer_id)
+        await ping_viewer(redis, user.id, streamer_id)
 
 
 @sio.on("webrtc:offer", namespace=namespace)
