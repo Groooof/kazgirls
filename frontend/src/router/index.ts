@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import NotFound from '@/views/NotFound.vue'
 import Streamer from '@/views/Streamer.vue'
 import Viewer from '@/views/Viewer.vue'
 
@@ -13,11 +12,6 @@ const routes = [
     path: '/streamers/:id/view',
     name: 'Viewer',
     component: Viewer,
-  },
-  {
-    path: '/:pathMatch(.*)*',
-    name: 'NotFound',
-    component: NotFound,
   },
 ]
 const router = createRouter({

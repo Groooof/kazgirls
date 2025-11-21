@@ -1,45 +1,7 @@
-<template>
-  <div class="page">
-    <header>
-      <h1>Streamer</h1>
-      <div class="status">
-        <span :class="['dot', socketConnected ? 'on' : 'off']"></span>
-        {{ socketConnected ? 'Socket connected' : 'Socket disconnected' }}
-        <span v-if="connectionNote"> · {{ connectionNote }}</span>
-      </div>
-    </header>
-
-    <main>
-      <div class="video-box">
-        <video ref="localVideo" autoplay playsinline muted></video>
-        <div class="overlay">
-          <div class="badge">Your camera</div>
-        </div>
-      </div>
-
-      <div class="controls">
-        <button @click="startCamera" :disabled="mediaActive">Start camera</button>
-        <button @click="stopCamera" :disabled="!mediaActive">Stop camera</button>
-        <button @click="toggleMic" :disabled="!mediaActive">
-          {{ micEnabled ? 'Mute mic' : 'Unmute mic' }}
-        </button>
-        <button @click="restartAllIce">Restart ICE (all viewers)</button>
-      </div>
-
-      <details class="debug">
-        <summary>Debug info</summary>
-        <pre>explicitStreamerId: {{ explicitStreamerId ?? 'none' }}</pre>
-        <pre>learnedStreamerId: {{ learnedStreamerId ?? 'none' }}</pre>
-        <pre>viewers: {{ Array.from(peers.keys()) }}</pre>
-        <pre>socketId: {{ socketId || '—' }}</pre>
-      </details>
-    </main>
-  </div>
-</template>
-
 <script setup>
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { onMounted, onBeforeUnmount, ref, useTemplateRef } from 'vue'
 import { io } from 'socket.io-client'
+import VideoPlayer from './VideoPlayer.vue'
 
 /**
  * ====== CONFIG ======
@@ -66,7 +28,8 @@ function getToken() {
 /**
  * ====== STATE ======
  */
-const localVideo = ref(null)
+const localVideo = useTemplateRef('localVideo')
+
 const socketConnected = ref(false)
 const socketId = ref(null)
 const connectionNote = ref('')
@@ -325,10 +288,14 @@ function attachSocketHandlers() {
  * ====== CAMERA / CONTROLS ======
  */
 async function startCamera() {
+  console.log(localVideo.value)
   try {
     if (mediaActive.value) return
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     localVideo.value.srcObject = localStream
+
+    console.log(localVideo.value)
+    
     mediaActive.value = true
     micEnabled.value = true
     // Раздать треки уже созданным PC (если кто-то постучался раньше нас)
@@ -366,7 +333,7 @@ function restartAllIce() {
 onMounted(async () => {
   // 1) Подключаемся к серверу
   socket = io(`${SIGNALING_URL}${NAMESPACE}`, {
-    auth: { token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiaWF0IjoxNzYyNzExNjg4LCJleHAiOjE3NjUzMDM2ODh9._oX0nQazoczBHDvIGvH06UpfSlYH4o653GZROAfSMcg' },
+    auth: { token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiaWF0IjoxNzYyNzE0ODkyLCJleHAiOjE3NjUzMDY4OTJ9.7FeK4eoCZmo8qOwQxKfAVdMDzIth8kfEk8MFl5V3EVw' },
     autoConnect: true,
     transports: ['websocket']
   })
@@ -392,7 +359,41 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
+<template>
+  <div class="page">
+    <header>
+      <h1>Streamer</h1>
+      <div class="status">
+        <span :class="['dot', socketConnected ? 'on' : 'off']"></span>
+        {{ socketConnected ? 'Socket connected' : 'Socket disconnected' }}
+        <span v-if="connectionNote"> · {{ connectionNote }}</span>
+      </div>
+    </header>
+
+    <main>
+      <VideoPlayer ref="localVideo" :src-object="localStream" />
+
+      <div class="controls">
+        <button @click="startCamera" :disabled="mediaActive">Start camera</button>
+        <button @click="stopCamera" :disabled="!mediaActive">Stop camera</button>
+        <button @click="toggleMic" :disabled="!mediaActive">
+          {{ micEnabled ? 'Mute mic' : 'Unmute mic' }}
+        </button>
+        <button @click="restartAllIce">Restart ICE (all viewers)</button>
+      </div>
+
+      <details class="debug">
+        <summary>Debug info</summary>
+        <pre>explicitStreamerId: {{ explicitStreamerId ?? 'none' }}</pre>
+        <pre>learnedStreamerId: {{ learnedStreamerId ?? 'none' }}</pre>
+        <pre>viewers: {{ Array.from(peers.keys()) }}</pre>
+        <pre>socketId: {{ socketId || '—' }}</pre>
+      </details>
+    </main>
+  </div>
+</template>
+
+<style>
 .page { max-width: 900px; margin: 0 auto; padding: 20px; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 header { display: flex; align-items: baseline; gap: 16px; }
 .status { color: #666; font-size: 14px; }

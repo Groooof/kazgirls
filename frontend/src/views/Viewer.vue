@@ -1,36 +1,6 @@
-<template>
-  <div class="page">
-    <header>
-      <h1>Viewer</h1>
-      <div class="status">
-        <span :class="['dot', socketConnected ? 'on' : 'off']"></span>
-        {{ socketConnected ? 'Socket connected' : 'Socket disconnected' }}
-        <span v-if="connectionNote"> · {{ connectionNote }}</span>
-      </div>
-    </header>
-
-    <main>
-      <div class="video-box">
-        <video ref="remoteVideo" autoplay playsinline :muted="muted"></video>
-        <div class="overlay">
-          <div class="badge">Stream</div>
-          <button class="mute" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
-        </div>
-      </div>
-
-      <details class="debug">
-        <summary>Debug info</summary>
-        <pre>streamerId: {{ streamerId }}</pre>
-        <pre>viewerKey: {{ viewerKey }}</pre>
-        <pre>socketId: {{ socketId || '—' }}</pre>
-        <pre>pc: {{ pcState }}</pre>
-      </details>
-    </main>
-  </div>
-</template>
-
-<script setup>
+<script lang="ts" setup>
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
+import axios, { AxiosError } from 'axios'
 import { io } from 'socket.io-client'
 
 const SIGNALING_URL = 'http://localhost:8000'
@@ -103,7 +73,6 @@ function makeChannel() {
  * ====== PEER CONNECTION ======
  */
 function createPC() {
-  if (pc) try { pc.close() } catch (_) {}
   pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
 
   // Зритель получает только удалённые медиапотоки
@@ -115,6 +84,8 @@ function createPC() {
     const [stream] = ev.streams
     if (remoteVideo.value && stream) {
       remoteVideo.value.srcObject = stream
+
+      console.log(stream)
     }
   })
 
@@ -309,26 +280,6 @@ function toggleMute() {
 /**
  * ====== LIFECYCLE ======
  */
-onMounted(() => {
-  createPC()
-
-  socket = io(`${SIGNALING_URL}${NAMESPACE}`, {
-    auth: { token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzIiwiaWF0IjoxNzYyNzExNzM2LCJleHAiOjE3NjUzMDM3MzZ9.18L6f6NKovBucGQTFJHoN80GMwUPbQl1JybgqjQEUIk' },
-    // зрителю обязательно указать streamer_id (сервер этого ждёт)
-    query: streamerId != null ? { streamer_id: String(streamerId) } : {},
-    autoConnect: true,
-    transports: ['websocket', 'polling']
-  })
-  attachSocketHandlers()
-
-  // Пингуем бэк для слежения за онлайном
-  pingTimer = setInterval(() => {
-    try { socket.emit('ping', {}) } catch (_) {}
-  }, 10_000)
-
-  // На случай, если negotiationneeded не сработает — включим автоцикл
-  scheduleAutoOffer(800)
-})
 
 onBeforeUnmount(() => {
   clearTimeout(autoOfferTimer)
@@ -337,9 +288,89 @@ onBeforeUnmount(() => {
   try { pc?.close() } catch (_) {}
 })
 
+const isAuth = ref(false)
+const info = ref()
+const error = ref()
+
+const auth = async() => {
+  try { 
+    const { data } = await axios.post('/api/api-internal/v1/tokens/login', {
+      username: 'girl',
+      password: 'test',
+    })
+
+    info.value = data
+
+    createPC()
+
+    socket = io({
+      auth: { token: data.access_token },
+      // зрителю обязательно указать streamer_id (сервер этого ждёт)
+      query: streamerId != null ? { streamer_id: String(streamerId) } : {},
+      autoConnect: true,
+      transports: ['websocket', 'polling']
+    })
+
+    attachSocketHandlers()
+
+    // Пингуем бэк для слежения за онлайном
+    pingTimer = setInterval(() => {
+      try { socket.emit('ping', {}) } catch (_) {}
+    }, 10_000)
+
+    // На случай, если negotiationneeded не сработает — включим автоцикл
+    scheduleAutoOffer(800)
+
+    isAuth.value = true
+  } catch (err) {
+    const e = err as AxiosError
+
+    console.error(e)
+
+    error.value = e
+  }
+}
 </script>
 
-<style scoped>
+<template>
+  <div class="page">
+    <header>
+      <h1>Viewer</h1>
+      <div class="status">
+        <span :class="['dot', socketConnected ? 'on' : 'off']"></span>
+        {{ socketConnected ? 'Socket connected' : 'Socket disconnected' }}
+        <span v-if="connectionNote"> · {{ connectionNote }}</span>
+      </div>
+    </header>
+
+    <main>
+      <div class="video-box">
+        <video ref="remoteVideo" autoplay playsinline :muted="muted"></video>
+        <div class="overlay">
+          <div class="badge">Stream</div>
+          <button class="mute" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
+        </div>
+      </div>
+
+      <details class="debug">
+        <summary>Debug info</summary>
+        <pre>streamerId: {{ streamerId }}</pre>
+        <pre>viewerKey: {{ viewerKey }}</pre>
+        <pre>socketId: {{ socketId || '—' }}</pre>
+        <pre>pc: {{ pcState }}</pre>
+      </details>
+    </main>
+  </div>
+
+  <button type="button" @click="auth">
+    Авторизация
+  </button>
+  <div v-if="isAuth">Успешно</div>
+  <div v-if="error">{{ JSON.stringify(error) }}</div>
+  <div v-if="info">{{ info }}</div>
+</template>
+
+<style>
 .page { max-width: 900px; margin: 0 auto; padding: 20px; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 header { display: flex; align-items: baseline; gap: 16px; }
 .status { color: #666; font-size: 14px; }
