@@ -1,3 +1,4 @@
+import socketio
 from loguru import logger
 from redis.asyncio import Redis
 from socketio.exceptions import ConnectionRefusedError as SocketIOConnectionRefusedError
@@ -5,7 +6,6 @@ from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from dependencies.db import with_db
 from dependencies.redis import with_redis
-from dependencies.sockets import server as sio
 from exceptions.streamers import NoSeatsError
 from logic.auth import get_user_by_token
 from logic.streamers import connect_streamer, connect_viewer, get_streamer_room_name, ping_streamer, ping_viewer
@@ -15,10 +15,9 @@ from utils.libs import get_socketio_query_param as get_query_param
 namespace = sockets_namespaces.streamers
 
 
-@sio.event(namespace=namespace)
 @with_db()
 @with_redis()
-async def connect(sid, environ, auth, db: AsyncSession, redis: Redis):
+async def connect(sid, environ, auth, db: AsyncSession, redis: Redis, sio: socketio.AsyncServer):
     token = auth.get("token")
     user = token and await get_user_by_token(db, token)
     if not user:
@@ -54,8 +53,7 @@ async def connect(sid, environ, auth, db: AsyncSession, redis: Redis):
     return True
 
 
-@sio.event(namespace=namespace)
-async def disconnect(sid):
+async def disconnect(sid, sio: socketio.AsyncServer):
     session = await sio.get_session(sid, namespace)
     user = session["user"]
     streamer_id = session["streamer_id"]
@@ -71,9 +69,8 @@ async def disconnect(sid):
     logger.debug("Disconnected sid: {}", sid)
 
 
-@sio.event(namespace=namespace)
 @with_redis()
-async def ping(sid, data, redis: Redis):
+async def ping(sid, data, redis: Redis, sio: socketio.AsyncServer):
     session = await sio.get_session(sid, namespace)
     user = session["user"]
     streamer_id = session["streamer_id"]
@@ -87,8 +84,7 @@ async def ping(sid, data, redis: Redis):
         await ping_viewer(redis, user.id, streamer_id)
 
 
-@sio.on("webrtc:offer", namespace=namespace)
-async def webrtc_offer(sid, data):
+async def webrtc_offer(sid, data, sio: socketio.AsyncServer):
     session = await sio.get_session(sid, namespace)
     user = session["user"]
     streamer_id = session["streamer_id"]
@@ -103,8 +99,7 @@ async def webrtc_offer(sid, data):
     await sio.emit("webrtc:offer", data, room=room, skip_sid=sid, namespace=namespace)
 
 
-@sio.on("webrtc:answer", namespace=namespace)
-async def webrtc_answer(sid, data):
+async def webrtc_answer(sid, data, sio: socketio.AsyncServer):
     session = await sio.get_session(sid, namespace)
     user = session["user"]
     streamer_id = session["streamer_id"]
@@ -119,8 +114,7 @@ async def webrtc_answer(sid, data):
     await sio.emit("webrtc:answer", data, room=room, skip_sid=sid, namespace=namespace)
 
 
-@sio.on("webrtc:ice", namespace=namespace)
-async def webrtc_ice(sid, data):
+async def webrtc_ice(sid, data, sio: socketio.AsyncServer):
     session = await sio.get_session(sid, namespace)
     user = session["user"]
     streamer_id = session["streamer_id"]
@@ -133,3 +127,6 @@ async def webrtc_ice(sid, data):
 
     room = get_streamer_room_name(streamer_id)
     await sio.emit("webrtc:ice", data, room=room, skip_sid=sid, namespace=namespace)
+
+
+# NOTE: register new handlers in api/sockets/__init__.py

@@ -33,6 +33,7 @@ class Settings(CustomBaseSettings):
     debug: bool = False
     server_role: ServerRole = ServerRole.local
     enable_request_log: bool = False
+    arq_queue: str = "all"
 
     root_path: str = "/api"
     project_root: Path = Path(__file__).resolve().parent.parent

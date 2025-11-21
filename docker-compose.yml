@@ -23,6 +23,21 @@ services:
     ports:
       - "8002:8002"
 
+  kazgirls-jobs:
+    container_name: kazgirls-jobs
+    hostname: kazgirls-jobs
+    build:
+      context: ./api
+      dockerfile: .docker/Dockerfile
+      target: api-local
+    env_file:
+      - api/.docker/docker.env
+    depends_on:
+      - kazgirls-redis
+    volumes:
+      - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    entrypoint: ["arq", "job_worker.Worker"]
+
   kazgirls-redis:
     container_name: kazgirls-redis
     restart: always

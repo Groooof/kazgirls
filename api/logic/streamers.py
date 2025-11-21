@@ -20,6 +20,7 @@ async def connect_streamer(redis: Redis, user_id: int, sid: str) -> None:
 
 
 async def connect_viewer(sio: socketio.AsyncServer, redis: Redis, user_id: int, sid: str, streamer_id: int) -> None:
+    # TODO: что делать если подключен к другому стримеру?
     now_ts = int(utc_now().timestamp())
 
     async with redis.lock(f"streamer:{streamer_id}:viewers:lock", timeout=5):

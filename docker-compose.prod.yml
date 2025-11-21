@@ -24,6 +24,18 @@ services:
     depends_on:
       - kazgirls-redis
 
+  kazgirls-jobs:
+    image: kazgirls-jobs
+    container_name: kazgirls-jobs
+    hostname: kazgirls-jobs
+    env_file:
+      - kazgirls-api-docker.env
+    depends_on:
+      - kazgirls-redis
+    volumes:
+      - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    entrypoint: ["arq", "job_worker.Worker"]
+
   kazgirls-redis:
     image: redis:8.0.2
     container_name: kazgirls-redis

@@ -25,11 +25,11 @@ from starlette.templating import Jinja2Templates
 from admin.bases import CustomAdmin, authentication_backend
 from app_logging import init_sentry, set_logging_config
 from dependencies.db import EngineTypeEnum, _get_db, engines
-from dependencies.sockets import server as sio
 from endpoints import external_api_router, internal_api_router
 from exceptions.bases import LogicException
 from settings.conf import databases, settings
 from sockets import *  # noqa: F403
+from sockets import register_handlers
 from utils.handlers import any_exception_handler, logic_exception_handler, unhandled_validation_exception_handler
 from utils.middleware import TracemallocMiddleware
 
@@ -170,7 +170,19 @@ def init_app():
     return app
 
 
-def init_sockets_app(fastapi_app):
+def init_sio():
+    return socketio.AsyncServer(
+        async_mode="asgi",
+        client_manager=socketio.AsyncRedisManager(str(databases.sockets_redis_url)),
+        cors_allowed_origins="*",
+        logger=False,
+        engineio_logger=False,
+        transports=["websocket"],
+    )
+
+
+def init_sockets_app(sio, fastapi_app):
+    register_handlers(sio)
     return socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
 
@@ -189,5 +201,6 @@ def get_app() -> FastAPI:
         db=_get_db,
         authentication_backend=authentication_backend,
     )
-    sockets_app = init_sockets_app(app)
+    sio = init_sio()
+    sockets_app = init_sockets_app(sio, app)
     return sockets_app

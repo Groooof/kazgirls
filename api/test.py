@@ -41,7 +41,6 @@ async def main():
             namespaces=["/streamers"],
             auth={"token": token},
             transports=["websocket"],
-            headers={"Cookie": "csrftoken=NtiymjcJsSFuAjo40mRDlqP2alwwuohF;"},
         )
     except ConnectionError:
         print("Ошибка подключения")
@@ -68,6 +67,3 @@ async def main2(redis: Redis):
     now_ts = int(utc_now().timestamp())
     viewers_count = await redis.zrange("test:1", 0, now_ts)
     print(viewers_count)
-
-
-asyncio.run(main2())

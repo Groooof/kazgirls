@@ -44,7 +44,9 @@ def with_db(use_default: bool = False):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             async with _get_db(use_default=use_default) as db:
-                return await func(*args, db=db, **kwargs)
+                if "db" not in kwargs:
+                    kwargs["db"] = db
+                return await func(*args, **kwargs)
 
         return wrapper
 
