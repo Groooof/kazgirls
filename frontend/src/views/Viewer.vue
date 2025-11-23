@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
 
-const isProd = true
+const isProd = false
 
 const route = useRoute()
 const streamerId = isProd ? 4 : 2
@@ -157,47 +157,98 @@ const cleanupConnection = () => {
   remoteStream.value = null
 }
 
-const containterRef = useTemplateRef('containterRef')
-
 const handleVisibilityChange = async () => {
   const player = playerRef.value
-  if (!player) return
+  const video = player?.getVideoElement?.()
 
-  const video = player.getVideoElement?.()
-  if (!video || !remoteStream.value) return
+  if (!video) return
+  if (!remoteStream.value) return // нет стрима — нет PiP
 
-  // На всякий случай — ждём, пока есть данные
+  // Не пытаемся включать PiP, пока видео даже не начало играть
   if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     return
   }
 
-  const anyDoc = document as any
+  const docAny = document as any
+  const videoAny = video as any
 
-  console.log(document.visibilityState)
+  const hasStandardPiP =
+    'pictureInPictureEnabled' in document &&
+    typeof videoAny.requestPictureInPicture === 'function'
 
-  // сворачивание / переход на другую вкладку
-  if (document.visibilityState === 'hidden') {
-  
-    // Пытаемся включить PiP через Plyr (enterPip)
+  const hasWebkitPiP =
+    typeof videoAny.webkitSupportsPresentationMode === 'function' &&
+    videoAny.webkitSupportsPresentationMode('picture-in-picture')
+
+  const enterStandardPiP = async () => {
+    if (!hasStandardPiP || !docAny.pictureInPictureEnabled) return
+    if (docAny.pictureInPictureElement && docAny.pictureInPictureElement !== video) return
+    if (docAny.pictureInPictureElement === video) return
+
     try {
-      await player.enterPip?.()
+      await videoAny.requestPictureInPicture()
+      console.log('[VIEWER] entered PiP (standard)')
     } catch (e) {
-      console.error('[VIEWER] enterPip error', e)
+      console.error('[VIEWER] requestPictureInPicture error', e)
     }
-    return
   }
 
-  // возврат на вкладку — выходим из PiP
-  if (document.visibilityState === 'visible') {
-    if (containterRef.value) {
-      containterRef.value.click()
+  const exitStandardPiP = async () => {
+    if (docAny.pictureInPictureElement === video) {
+      try {
+        await docAny.exitPictureInPicture()
+        console.log('[VIEWER] exit PiP (standard)')
+      } catch (e) {
+        console.error('[VIEWER] exitPictureInPicture error', e)
+      }
     }
+  }
 
-    // try {
-    //   await player.exitPip?.()
-    // } catch (e) {
-    //   console.error('[VIEWER] exitPip error', e)
-    // }
+  const enterWebkitPiP = () => {
+    try {
+      videoAny.webkitSetPresentationMode('picture-in-picture')
+      console.log('[VIEWER] entered PiP (webkit)')
+    } catch (e) {
+      console.error('[VIEWER] webkitSetPresentationMode(pip) error', e)
+    }
+  }
+
+  const exitWebkitPiP = () => {
+    try {
+      if (videoAny.webkitPresentationMode === 'picture-in-picture') {
+        videoAny.webkitSetPresentationMode('inline')
+        console.log('[VIEWER] exit PiP (webkit)')
+      }
+    } catch (e) {
+      console.error('[VIEWER] webkitSetPresentationMode(inline) error', e)
+    }
+  }
+
+  const enterPiP = async () => {
+    if (hasStandardPiP) {
+      await enterStandardPiP()
+    } else if (hasWebkitPiP) {
+      enterWebkitPiP()
+    } else {
+      // Нет поддержки PiP — просто ничего не делаем
+      console.log('[VIEWER] PiP not supported on this device')
+    }
+  }
+
+  const exitPiP = async () => {
+    if (hasStandardPiP) {
+      await exitStandardPiP()
+    } else if (hasWebkitPiP) {
+      exitWebkitPiP()
+    }
+  }
+
+  if (document.visibilityState === 'hidden') {
+    // Пытаемся войти в PiP при сворачивании/уходе
+    await enterPiP()
+  } else if (document.visibilityState === 'visible') {
+    // При возврате на вкладку — выходим
+    await exitPiP()
   }
 }
 
@@ -230,7 +281,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containterRef">
+  <div>
     <h1>Viewer for streamer #{{ streamerId }}</h1>
 
     <p v-if="!isSocketConnected">
