@@ -263,6 +263,7 @@ onMounted(async() => {
 
     initSocket(data.access_token)
   } else {
+    console.log(4)
     try {
       const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
         username: "girl",

@@ -56,13 +56,15 @@ const videoPlayerOptions: Plyr.Options = {
 const initPlayer = (): void => {
   if (!videoPlayerRef.value) return
 
-  videoPlayerInstance.value = new Plyr(videoPlayerRef.value, videoPlayerOptions)
+  const instance = new Plyr(videoPlayerRef.value, videoPlayerOptions)
 
-  videoPlayerInstance.value.on('enterpictureinpicture', () => {
+  videoPlayerInstance.value = instance
+
+  instance.on('enterpictureinpicture', () => {
     emit('get-pip-mode', true)
   })
 
-  videoPlayerInstance.value.on('leavepictureinpicture', () => {
+  instance.on('leavepictureinpicture', () => {
     emit('get-pip-mode', false)
   })
 }
