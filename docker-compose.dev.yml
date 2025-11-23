@@ -19,9 +19,6 @@ services:
     hostname: kazgirls-api
     env_file:
       - kazgirls-api-docker.env
-    depends_on:
-      - kazgirls-db
-      - kazgirls-redis
     volumes:
       - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
@@ -33,9 +30,6 @@ services:
     hostname: kazgirls-jobs
     env_file:
       - kazgirls-api-docker.env
-    depends_on:
-      - kazgirls-db
-      - kazgirls-redis
     volumes:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
     entrypoint: ["arq", "job_worker.Worker"]
