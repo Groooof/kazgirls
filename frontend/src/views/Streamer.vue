@@ -198,29 +198,218 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
-    <h1>Streamer #{{ streamerId }}</h1>
+  <div class="streamer-page">
+    <div class="streamer-card">
+      <header class="streamer-header">
+        <div>
+          <h1 class="streamer-title">Панель стримера #{{ streamerId }}</h1>
+          <p class="streamer-subtitle">
+            {{
+              !isSocketConnected
+                ? 'Подключаемся к серверу...'
+                : isStreaming
+                  ? 'Стрим в эфире'
+                  : 'Стрим остановлен'
+            }}
+          </p>
+        </div>
 
-    <div style="max-width: 600px;">
-      <!-- Локальное видео стримера -->
-      <VideoPlayer :src-object="localStream" play muted />
-    </div>
+        <div class="status-chip" :class="isSocketConnected ? 'status-chip--ok' : 'status-chip--bad'">
+          <span class="status-dot" :class="isSocketConnected ? 'status-dot--ok' : 'status-dot--bad'"></span>
+          <span>{{ isSocketConnected ? 'Онлайн' : 'Офлайн' }}</span>
+        </div>
+      </header>
 
-    <div style="margin-top: 16px; display: flex; gap: 8px;">
-      <button :disabled="!isSocketConnected || isStreaming" @click="startStream">
-        Запустить стрим
-      </button>
-      <button :disabled="!isStreaming" @click="stopStream">
-        Остановить стрим
-      </button>
-    </div>
+      <div class="streamer-body">
+        <div class="video-wrapper">
+          <VideoPlayer :src-object="localStream" :muted="true" />
 
-    <!-- Опционально: показать remoteStream, если нужен возврат -->
-    <!--
-    <div v-if="remoteStream" style="max-width: 600px; margin-top: 24px;">
-      <h3>Remote</h3>
-      <VideoPlayer :src-object="remoteStream" />
+          <div v-if="!localStream" class="video-overlay">
+            <p class="video-overlay-text">Включите камеру, чтобы начать стрим</p>
+          </div>
+        </div>
+
+        <div class="controls-row">
+          <button
+            class="btn btn--primary"
+            :disabled="!isSocketConnected || isStreaming"
+            @click="startStream"
+          >
+            ▶ Запустить стрим
+          </button>
+
+          <button
+            class="btn btn--danger"
+            :disabled="!isStreaming"
+            @click="stopStream"
+          >
+            Остановить стрим
+          </button>
+        </div>
+      </div>
     </div>
-    -->
   </div>
 </template>
+
+<style scoped>
+.streamer-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: #020617;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.streamer-card {
+  width: 100%;
+  max-width: 960px;
+  background: #020617;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 16px 20px 20px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.9);
+  box-sizing: border-box;
+}
+
+.streamer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.streamer-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.streamer-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-chip--ok {
+  background: rgba(22, 163, 74, 0.16);
+  color: #bbf7d0;
+}
+
+.status-chip--bad {
+  background: rgba(220, 38, 38, 0.18);
+  color: #fecaca;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.status-dot--ok {
+  background: #22c55e;
+}
+
+.status-dot--bad {
+  background: #ef4444;
+}
+
+.streamer-body {
+  margin-top: 8px;
+}
+
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #020617;
+  border: 1px solid rgba(15, 23, 42, 0.9);
+}
+
+.video-wrapper :deep(video) {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  background: #020617;
+}
+
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top, rgba(15, 23, 42, 0.4), #020617);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-overlay-text {
+  margin: 0;
+  font-size: 14px;
+  color: #e5e7eb;
+}
+
+.controls-row {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s ease;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+
+.btn--primary {
+  background: linear-gradient(135deg, #22c55e, #0ea5e9);
+  color: #f9fafb;
+  box-shadow: 0 12px 30px rgba(34, 197, 94, 0.35);
+}
+
+.btn--primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 40px rgba(34, 197, 94, 0.45);
+}
+
+.btn--danger {
+  background: linear-gradient(135deg, #ef4444, #f97316);
+  color: #f9fafb;
+  box-shadow: 0 12px 30px rgba(239, 68, 68, 0.35);
+}
+
+.btn--danger:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 40px rgba(239, 68, 68, 0.45);
+}
+</style>
