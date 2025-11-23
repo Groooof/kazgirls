@@ -7,7 +7,7 @@ import axios from 'axios'
 import { config } from '@/config'
 
 const route = useRoute()
-const streamerId = 2
+const streamerId = 4
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -26,7 +26,7 @@ const isPip = ref(false)
 
 const initSocket = (access_token: string) => {
   // http://localhost:8000
-  socket.value = io('/streamers', {
+  socket.value = io(`${config.apiUrl}/streamers`, {
     auth: { token: access_token },
     autoConnect: true,
     query: { streamer_id: String(streamerId) },
@@ -173,11 +173,17 @@ const handleVisibilityChange = async () => {
 }
 
 onMounted(async() => {
-  // http://localhost:8000
+  // prod
   const { data } = await axios.post('/api/v1/tokens/login', {
-    username: "girl",
+    username: "viewer_2",
     password: "test",
   })
+
+  // dev
+  // const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
+  //   username: "girl",
+  //   password: "test",
+  // })
 
   initSocket(data.access_token)
 
