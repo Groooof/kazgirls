@@ -128,11 +128,18 @@ const exitPip = async () => {
   }
 }
 
+const play = () => {
+  if (!videoPlayerRef.value) return
+
+  videoPlayerRef.value.play()
+}
+
 defineExpose({
   getVideoElement: () => videoPlayerRef.value,
   getPlyrInstance: () => videoPlayerInstance.value,
   enterPip,
   exitPip,
+  play,
 })
 </script>
 

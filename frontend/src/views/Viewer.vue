@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
@@ -43,7 +43,7 @@ const createPeerConnection = () => {
     }
   }
 
-  peer.ontrack = async (event) => {
+  peer.ontrack = (event) => {
     console.log('[VIEWER] ontrack', event.streams, event.track)
     if (!remoteStream.value) {
       remoteStream.value = new MediaStream()
@@ -51,9 +51,7 @@ const createPeerConnection = () => {
     remoteStream.value.addTrack(event.track)
     hasStream.value = true
 
-    await nextTick()
-
-    forcePlay()
+    playerRef.value?.play()
   }
 
   peer.onconnectionstatechange = () => {
@@ -216,33 +214,6 @@ const handleVisibilityChange = async () => {
       await player.exitPip?.()
     } catch (e) {
       console.error('[VIEWER] exitPip error', e)
-    }
-  }
-}
-
-const forcePlay = async () => {
-  const player = playerRef.value
-  if (!player) return
-
-  const video: HTMLVideoElement | null = player.getVideoElement?.() as any
-  // @ts-ignore
-  const plyrInstance = player.getPlyrInstance?.()
-
-  if (!video) return
-
-  try {
-    await video.play()
-    console.log('[VIEWER] forced native play() ok')
-  } catch (e) {
-    console.warn('[VIEWER] native play() failed', e)
-  }
-
-  if (plyrInstance && typeof plyrInstance.play === 'function') {
-    try {
-      await plyrInstance.play()
-      console.log('[VIEWER] forced plyr.play() ok')
-    } catch (e) {
-      console.warn('[VIEWER] plyr.play() failed', e)
     }
   }
 }
