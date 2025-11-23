@@ -1,6 +1,7 @@
 services:
   kazgirls-frontend:
     container_name: kazgirls-frontend
+    restart: unless-stopped
     hostname: kazgirls-frontend
     build:
       context: ./frontend
@@ -15,6 +16,7 @@ services:
 
   kazgirls-api:
     container_name: kazgirls-api
+    restart: unless-stopped
     hostname: kazgirls-api
     build:
       context: ./api
@@ -28,6 +30,7 @@ services:
 
   kazgirls-jobs:
     container_name: kazgirls-jobs
+    restart: unless-stopped
     hostname: kazgirls-jobs
     build:
       context: ./api
@@ -44,7 +47,7 @@ services:
 
   kazgirls-redis:
     container_name: kazgirls-redis
-    restart: always
+    restart: unless-stopped
     image: redis:8.0.2
     hostname: kazgirls-redis
     command: redis-server --requirepass kazgirls
@@ -61,7 +64,7 @@ services:
   kazgirls-db:
     container_name: kazgirls-database
     hostname: kazgirls-db
-    restart: always
+    restart: unless-stopped
     image: postgres:17
     ports:
       - "5411:5432"

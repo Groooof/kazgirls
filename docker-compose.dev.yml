@@ -2,6 +2,7 @@ version: "2"
 services:
   kazgirls-frontend:
     image: kazgirls-frontend
+    restart: unless-stopped
     container_name: kazgirls-frontend
     hostname: kazgirls-frontend
     env_file:
@@ -13,12 +14,11 @@ services:
 
   kazgirls-api:
     image: kazgirls-api
+    restart: unless-stopped
     container_name: kazgirls-api
     hostname: kazgirls-api
     env_file:
       - kazgirls-api-docker.env
-    ports:
-      - "8006:8002"
     depends_on:
       - kazgirls-db
       - kazgirls-redis
@@ -27,7 +27,8 @@ services:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
 
   kazgirls-jobs:
-    image: kazgirls-jobs
+    image: kazgirls-api
+    restart: unless-stopped
     container_name: kazgirls-jobs
     hostname: kazgirls-jobs
     env_file:
@@ -38,13 +39,6 @@ services:
     volumes:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
     entrypoint: ["arq", "job_worker.Worker"]
-
-  kazgirls-redis:
-    image: redis:8.0.2
-    container_name: kazgirls-redis
-    hostname: kazgirls-redis
-    ports:
-      - "6845:6379"
 
   kazgirls-migrate:
     image: kazgirls-api

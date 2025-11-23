@@ -4,7 +4,7 @@ ARG RELEASE
 ENV SENTRY_RELEASE=$RELEASE
 
 WORKDIR /code
-ENV PATH /code/node_modules/.bin:$PATH
+ENV PATH=/code/node_modules/.bin:$PATH
 COPY . .
 RUN npm i --no-progress --non-interactive
 RUN cp .docker/docker.env .env
