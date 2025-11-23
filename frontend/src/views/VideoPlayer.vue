@@ -42,6 +42,7 @@ const getVideoPlayerControls = () => {
 
   controls.push('volume')
   controls.push('fullscreen')
+  controls.push('pip')
 
   return controls
 }
