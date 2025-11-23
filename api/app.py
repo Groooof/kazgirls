@@ -25,7 +25,7 @@ from starlette.templating import Jinja2Templates
 from admin.bases import CustomAdmin, authentication_backend
 from app_logging import init_sentry, set_logging_config
 from dependencies.db import EngineTypeEnum, _get_db, engines
-from endpoints import external_api_router, internal_api_router
+from endpoints import router
 from exceptions.bases import LogicException
 from settings.conf import databases, settings
 from sockets import *  # noqa: F403
@@ -155,8 +155,7 @@ def init_app():
     app.add_exception_handler(RequestValidationError, unhandled_validation_exception_handler)
     app.add_exception_handler(StarletteHTTPException, any_exception_handler)
 
-    app.include_router(external_api_router, prefix=settings.api_v1_str)
-    app.include_router(internal_api_router, prefix=settings.api_internal_str)
+    app.include_router(router, prefix=settings.api_v1_str)
 
     @app.get("/docs", include_in_schema=False)
     async def scalar_docs():

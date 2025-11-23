@@ -24,7 +24,7 @@ class registrator:
             return wrapper
 
         event = event or func.__name__
-        self.sio.on(event, self.namespace, decorator(func))
+        self.sio.on(event, decorator(func), self.namespace)
 
 
 def register_handlers(sio: socketio.AsyncServer) -> None:

@@ -7,7 +7,7 @@ services:
     env_file:
       - kazgirls-frontend-docker.env
     ports:
-      - "4545:80"
+      - "80:80"
     depends_on:
       - kazgirls-api
 
@@ -20,6 +20,7 @@ services:
     ports:
       - "8006:8002"
     depends_on:
+      - kazgirls-db
       - kazgirls-redis
     volumes:
       - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
@@ -32,6 +33,7 @@ services:
     env_file:
       - kazgirls-api-docker.env
     depends_on:
+      - kazgirls-db
       - kazgirls-redis
     volumes:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/

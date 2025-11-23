@@ -8,6 +8,8 @@ services:
       target: nginx-local
     env_file:
       - frontend/.docker/docker.env
+    depends_on:
+      - kazgirls-api
     ports:
       - "80:80"
 
@@ -20,8 +22,9 @@ services:
       target: api-local
     env_file:
       - api/.docker/docker.env
-    ports:
-      - "8002:8002"
+    depends_on:
+      - kazgirls-db
+      - kazgirls-redis
 
   kazgirls-jobs:
     container_name: kazgirls-jobs
@@ -33,6 +36,7 @@ services:
     env_file:
       - api/.docker/docker.env
     depends_on:
+      - kazgirls-db
       - kazgirls-redis
     volumes:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/

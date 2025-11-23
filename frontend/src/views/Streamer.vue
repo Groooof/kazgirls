@@ -40,13 +40,13 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { io } from 'socket.io-client'
+import { config } from '@/config.ts'
 
 /**
  * ====== CONFIG ======
  * Задайте адрес сигналинга при необходимости (по умолчанию — текущий origin).
  * Если сервер сокетов на другом домене/порте, укажите его явно.
  */
-const SIGNALING_URL = 'http://localhost:8000'
 const NAMESPACE = '/streamers'
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
 
@@ -365,7 +365,7 @@ function restartAllIce() {
  */
 onMounted(async () => {
   // 1) Подключаемся к серверу
-  socket = io(`${SIGNALING_URL}${NAMESPACE}`, {
+  socket = io(`${config.apiUrl}${NAMESPACE}`, {
     auth: { token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiaWF0IjoxNzYyNzExNjg4LCJleHAiOjE3NjUzMDM2ODh9._oX0nQazoczBHDvIGvH06UpfSlYH4o653GZROAfSMcg' },
     autoConnect: true,
     transports: ['websocket']

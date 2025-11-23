@@ -38,7 +38,6 @@ class Settings(CustomBaseSettings):
     root_path: str = "/api"
     project_root: Path = Path(__file__).resolve().parent.parent
     api_v1_str: str = "/api/v1"
-    api_internal_str: str = "/api-internal/v1"
 
     sentry_url: str = ""
     log_level: str = "info" if server_role == ServerRole.prod else "debug"

@@ -22,6 +22,7 @@ services:
       - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
     depends_on:
+      - kazgirls-db
       - kazgirls-redis
 
   kazgirls-jobs:
@@ -31,6 +32,7 @@ services:
     env_file:
       - kazgirls-api-docker.env
     depends_on:
+      - kazgirls-db
       - kazgirls-redis
     volumes:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
