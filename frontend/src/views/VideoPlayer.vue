@@ -7,7 +7,7 @@ export type TimeCodeData = Plyr.MarkersPoints
 export type AppVideoPlayerAspectRatio = '16:9' | '4:3'
 
 export interface AppVideoPlayerProps {
-  url: string
+  url?: string
   poster?: string
   aspectRatio?: AppVideoPlayerAspectRatio
   srcObject?: MediaStream | null
@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<AppVideoPlayerProps>(), {
 
 const emit = defineEmits<AppVideoPlayerEmit>()
 
-const videoPlayerRef = useTemplateRef<HTMLElement>('videoPlayerRef')
+const videoPlayerRef = useTemplateRef<HTMLVideoElement>('videoPlayerRef')
 const videoPlayerInstance = ref()
 
 const videoPlayerOptions: Plyr.Options = {
@@ -52,9 +52,9 @@ const initPlayer = (): void => {
   })
 }
 
-watch(() => props.srcObject, (newStream) => {
-  if (videoPlayerRef.value && newStream) {
-    videoPlayerRef.value.srcObject = newStream
+watch(() => [props.srcObject, videoPlayerRef.value], () => {
+  if (videoPlayerRef.value && props.srcObject) {
+    videoPlayerRef.value.srcObject = props.srcObject
     // Автоплей после установки потока
     videoPlayerRef.value.play().catch(console.error)
   }
@@ -62,8 +62,6 @@ watch(() => props.srcObject, (newStream) => {
 
 onMounted(() => {
   initPlayer()
-
-  console.log(props.url)
 })
 
 defineExpose({
@@ -77,7 +75,7 @@ defineExpose({
       ref="videoPlayerRef"
       :src="url"
       :data-poster="poster"
-       playsinline
+      playsinline
       controls
       autoplay
       muted

@@ -1,387 +1,211 @@
-<script lang="ts" setup>
-import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
-import axios, { AxiosError } from 'axios'
-import { io } from 'socket.io-client'
-import { config } from '@/config.ts'
+<script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
+import { io, Socket } from 'socket.io-client'
+import VideoPlayer from './VideoPlayer.vue'
+import axios from 'axios'
+import { config } from '@/config'
 
-const NAMESPACE = '/streamers'
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
+const route = useRoute()
+const streamerId = 2
 
-/**
- * ====== UTILS ======
- */
-function qs(name) { return new URLSearchParams(window.location.search).get(name) }
-function getToken() {
-  const fromQS = qs('token')
-  if (fromQS) return fromQS
-  try { return localStorage.getItem('token') } catch (_) { return null }
-}
-function getStableViewerKey() {
-  try {
-    const k = localStorage.getItem('viewerKey')
-    if (k) return k
-    const buf = new Uint8Array(16)
-    crypto.getRandomValues(buf)
-    const hex = [...buf].map(b => b.toString(16).padStart(2, '0')).join('')
-    const newKey = `v-${hex}`
-    localStorage.setItem('viewerKey', newKey)
-    return newKey
-  } catch (_) {
-    // если localStorage недоступен — сгенерим volatile ключ
-    const rnd = Math.random().toString(36).slice(2)
-    return `v-${Date.now()}-${rnd}`
-  }
+const rtcConfig: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+  ],
 }
 
-/**
- * ====== STATE ======
- */
-const streamerIdStr = qs('streamer_id')
-if (!streamerIdStr) {
-  console.warn('Viewer: ?streamer_id= is required for server-side session binding')
-}
-const streamerId = streamerIdStr ? Number(streamerIdStr) : null
-const viewerKey = getStableViewerKey()
+const socket = ref<Socket | null>(null)
+const pc = ref<RTCPeerConnection | null>(null)
 
-const remoteVideo = ref(null)
-const muted = ref(true)
-const socketConnected = ref(false)
-const socketId = ref(null)
-const connectionNote = ref('')
+const remoteStream = ref<MediaStream | null>(null)
+const isSocketConnected = ref(false)
 
-let socket = null
-let pingTimer = null
-let autoOfferTimer = null
+const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
+const isPip = ref(false)
 
-// Perfect negotiation / PC
-let pc = null
-const pcState = computed(() => pc ? `${pc.connectionState} / ${pc.signalingState}` : 'no pc')
-
-const ctx = {
-  isPolite: true,                 // зритель — polite
-  makingOffer: false,
-  isSettingRemoteAnswerPending: false,
-  ignoreOffer: false,
-  pendingCandidates: []
-}
-
-function makeChannel() {
-  return { streamerId: streamerId ?? null, viewerKey }
-}
-
-/**
- * ====== PEER CONNECTION ======
- */
-function createPC() {
-  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-
-  // Зритель получает только удалённые медиапотоки
-  pc.addTransceiver('video', { direction: 'recvonly' })
-  pc.addTransceiver('audio', { direction: 'recvonly' })
-
-  pc.addEventListener('track', (ev) => {
-    // Будет стримерский медиа-трек
-    const [stream] = ev.streams
-    if (remoteVideo.value && stream) {
-      remoteVideo.value.srcObject = stream
-
-      console.log(stream)
-    }
+const initSocket = (access_token: string) => {
+  // http://localhost:8000
+  socket.value = io('/streamers', {
+    auth: { token: access_token },
+    autoConnect: true,
+    query: { streamer_id: String(streamerId) },
+    transports: ['websocket', 'polling'],
   })
 
-  pc.addEventListener('negotiationneeded', async () => {
-    // Инициируем оффер (важно для сценария "зритель пришёл первым")
-    await sendOfferSafe()
-  })
+  socket.value.on('connect', () => {
+    console.log('[VIEWER] socket connected')
+    isSocketConnected.value = true
 
-  pc.addEventListener('icecandidate', ({ candidate }) => {
-    if (!candidate) return
-    socket?.emit('webrtc:ice', { channel: makeChannel(), candidate })
-  })
-
-  pc.addEventListener('iceconnectionstatechange', () => {
-    const st = pc.iceConnectionState
-    if (st === 'failed') {
-      try { pc.restartIce() } catch (_) {}
-      // Попросим новое согласование
-      pc.dispatchEvent(new Event('negotiationneeded'))
-    }
-    if (st === 'connected') {
-      connectionNote.value = 'Streaming'
-    }
-  })
-
-  pc.addEventListener('connectionstatechange', () => {
-    const st = pc.connectionState
-    if (st === 'disconnected' || st === 'failed') {
-      connectionNote.value = `Peer ${st}, will retry…`
-      scheduleAutoOffer(800) // ускорим переподключение
-    }
-  })
-}
-
-async function sendOfferSafe() {
-  if (!pc) return
-  try {
-    ctx.makingOffer = true
-    if (pc.signalingState !== 'stable') return
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    socket?.emit('webrtc:offer', {
-      channel: makeChannel(),
-      description: pc.localDescription
+    socket.value?.emit('join_stream', {
+      streamerId,
+      role: 'viewer',
     })
-  } catch (err) {
-    console.error('[offer] error', err)
-  } finally {
-    ctx.makingOffer = false
+  })
+
+  socket.value.on('disconnect', () => {
+    console.log('[VIEWER] socket disconnected')
+    isSocketConnected.value = false
+  })
+
+  socket.value.on('webrtc:offer', async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit }) => {
+    console.log('[VIEWER] webrtc_offer received', payload)
+    if (payload.streamerId !== streamerId) return
+    await handleOffer(payload.sdp)
+  })
+
+  socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
+    console.log('[VIEWER] webrtc_ice_candidate received', payload)
+    if (payload.streamerId !== streamerId) return
+    if (!pc.value) return
+    try {
+      await pc.value.addIceCandidate(new RTCIceCandidate(payload.candidate))
+    } catch (e) {
+      console.error('Error adding ICE candidate (viewer)', e)
+    }
+  })
+
+  socket.value.on('stop_stream', (payload: { streamerId: number }) => {
+    console.log('[VIEWER] stop_stream', payload)
+    if (payload.streamerId !== streamerId) return
+    cleanupConnection()
+  })
+}
+
+const createPeerConnection = () => {
+  console.log('[VIEWER] createPeerConnection')
+  pc.value = new RTCPeerConnection(rtcConfig)
+
+  pc.value.onicecandidate = (event) => {
+    console.log('[VIEWER] onicecandidate', event.candidate)
+    if (event.candidate) {
+      socket.value?.emit('webrtc:ice', {
+        streamerId,
+        candidate: event.candidate.toJSON(),
+        from: 'viewer',
+      })
+    }
+  }
+
+  pc.value.ontrack = (event) => {
+    console.log('[VIEWER] ontrack', event.streams, event.track)
+    if (!remoteStream.value) {
+      remoteStream.value = new MediaStream()
+    }
+    remoteStream.value.addTrack(event.track)
+
+    console.log('REMOTE_STREAM: ', remoteStream.value)
+  }
+
+  pc.value.onconnectionstatechange = () => {
+    console.log('[VIEWER] connection state:', pc.value?.connectionState)
   }
 }
 
-async function handleRemoteDescription(description) {
-  if (!pc) return
-  const readyForOffer = !ctx.makingOffer && (pc.signalingState === 'stable' || ctx.isSettingRemoteAnswerPending)
-  const offerCollision = description.type === 'offer' && !readyForOffer
+const handleOffer = async (offer: RTCSessionDescriptionInit) => {
+  console.log('[VIEWER] handleOffer start', offer)
+  if (!pc.value) {
+    createPeerConnection()
+  }
+  if (!pc.value) return
 
-  ctx.ignoreOffer = !ctx.isPolite && offerCollision
-  if (ctx.ignoreOffer) {
-    console.warn('[viewer: impolite?] ignoring offer due to glare (should not happen)')
+  await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
+  console.log('[VIEWER] setRemoteDescription done')
+
+  const answer = await pc.value.createAnswer()
+  console.log('[VIEWER] createAnswer done', answer)
+
+  await pc.value.setLocalDescription(answer)
+  console.log('[VIEWER] setLocalDescription done')
+
+  socket.value?.emit('webrtc:answer', {
+    streamerId,
+    sdp: answer,
+  })
+  console.log('[VIEWER] answer sent')
+}
+
+const cleanupConnection = () => {
+  pc.value?.getReceivers().forEach((receiver) => receiver.track?.stop())
+  pc.value?.close()
+  pc.value = null
+
+  remoteStream.value?.getTracks().forEach((t) => t.stop())
+  remoteStream.value = null
+}
+
+const handleVisibilityChange = async () => {
+  const player = playerRef.value
+  const video = player?.getVideoElement?.()
+
+  if (!video) return
+
+  // @ts-ignore
+  const currentPipElement = document.pictureInPictureElement
+
+  // Свернули вкладку / ушли на другую
+  if (document.visibilityState === 'hidden') {
+    // Уже в PiP или браузер не умеет — ничего не делаем
+    // @ts-ignore
+    if (currentPipElement || !document.pictureInPictureEnabled) return
+
+    try {
+      // @ts-ignore
+      await video.requestPictureInPicture()
+    } catch (e) {
+      console.error('[VIEWER] request PiP error', e)
+    }
     return
   }
 
-  ctx.isSettingRemoteAnswerPending = description.type === 'answer'
-  try {
-    await pc.setRemoteDescription(description)
-  } catch (err) {
-    if (description.type === 'offer') {
+  // Вернулись на вкладку
+  if (document.visibilityState === 'visible') {
+    // @ts-ignore
+    if (currentPipElement === video) {
       try {
-        await pc.setLocalDescription({ type: 'rollback' })
-        await pc.setRemoteDescription(description)
+        // @ts-ignore
+        await document.exitPictureInPicture()
       } catch (e) {
-        console.error('[viewer] setRemoteDescription failed even after rollback', e)
-        return
+        console.error('[VIEWER] exit PiP error', e)
       }
-    } else {
-      console.error('[viewer] setRemoteDescription error', err)
-      return
-    }
-  } finally {
-    ctx.isSettingRemoteAnswerPending = false
-  }
-
-  // Применим отложенные ICE‑кандидаты
-  if (ctx.pendingCandidates.length) {
-    const q = ctx.pendingCandidates.slice()
-    ctx.pendingCandidates.length = 0
-    for (const c of q) {
-      try { await pc.addIceCandidate(c) } catch (e) { console.warn('addIceCandidate (queued) failed', e) }
-    }
-  }
-
-  if (description.type === 'offer') {
-    try {
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-      socket?.emit('webrtc:answer', {
-        channel: makeChannel(),
-        description: pc.localDescription
-      })
-    } catch (err) {
-      console.error('[viewer] createAnswer error', err)
     }
   }
 }
 
-/**
- * ====== AUTO OFFER LOOP ======
- * Позволяет зрителю «достучаться» до стримера, даже если он придёт позже.
- * Плавный бэкофф до 5s; сбрасывается при успехе/дисконнекте.
- */
-function scheduleAutoOffer(initialMs = 1200) {
-  clearTimeout(autoOfferTimer)
-  let delay = initialMs
-  const loop = async () => {
-    if (!socket || !socket.connected || !pc) { delay = 1200; autoOfferTimer = setTimeout(loop, delay); return }
-    if (pc.connectionState === 'connected') { autoOfferTimer = setTimeout(loop, 2000); return }
-    await sendOfferSafe()
-    delay = Math.min(delay * 1.6, 5000)
-    autoOfferTimer = setTimeout(loop, delay)
-  }
-  autoOfferTimer = setTimeout(loop, delay)
-}
-
-/**
- * ====== SOCKET ======
- */
-function attachSocketHandlers() {
-  socket.on('connect', () => {
-    socketConnected.value = true
-    socketId.value = socket.id
-    connectionNote.value = 'Connected to signaling'
-    // На всякий случай сразу инициируем оффер
-    scheduleAutoOffer(600)
-  })
-  socket.on('disconnect', () => {
-    socketConnected.value = false
-    socketId.value = null
-    scheduleAutoOffer(800)
-  })
-  socket.on('connect_error', (err) => {
-    connectionNote.value = `Connect error: ${err?.message || err}`
-  })
-  socket.on('connect:ok', () => {
-    // server ack
+onMounted(async() => {
+  // http://localhost:8000
+  const { data } = await axios.post('/api/v1/tokens/login', {
+    username: "girl",
+    password: "test",
   })
 
-  // ---- Signaling ----
-  socket.on('webrtc:offer', async (data) => {
-    const { channel, description } = data || {}
-    if (!channel || !description) return
-    // Принимаем только своё (по viewerKey и streamerId)
-    if (channel.viewerKey !== viewerKey) return
-    if (streamerId != null && channel.streamerId !== streamerId) return
-    await handleRemoteDescription(description)
-  })
+  initSocket(data.access_token)
 
-  socket.on('webrtc:answer', async (data) => {
-    const { channel, description } = data || {}
-    if (!channel || !description) return
-    if (channel.viewerKey !== viewerKey) return
-    if (streamerId != null && channel.streamerId !== streamerId) return
-    await handleRemoteDescription(description)
-  })
-
-  socket.on('webrtc:ice', async (data) => {
-    const { channel, candidate } = data || {}
-    if (!channel || !candidate) return
-    if (channel.viewerKey !== viewerKey) return
-    if (streamerId != null && channel.streamerId !== streamerId) return
-    if (!pc) return
-
-    if (!pc.remoteDescription) {
-      ctx.pendingCandidates.push(candidate)
-    } else {
-      try { await pc.addIceCandidate(candidate) }
-      catch (err) { if (!ctx.ignoreOffer) console.warn('addIceCandidate error', err) }
-    }
-  })
-}
-
-/**
- * ====== UI ======
- */
-function toggleMute() {
-  const v = remoteVideo.value
-  if (!v) return
-  muted.value = !muted.value
-  v.muted = muted.value
-}
-
-/**
- * ====== LIFECYCLE ======
- */
-
-onBeforeUnmount(() => {
-  clearTimeout(autoOfferTimer)
-  clearInterval(pingTimer)
-  try { socket?.disconnect() } catch (_) {}
-  try { pc?.close() } catch (_) {}
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
-const isAuth = ref(false)
-const info = ref()
-const error = ref()
+onBeforeUnmount(() => {
+  cleanupConnection()
+  socket.value?.disconnect()
 
-const auth = async() => {
-  try { 
-    const { data } = await axios.post('/api/api-internal/v1/tokens/login', {
-      username: 'girl',
-      password: 'test',
-    })
-
-    info.value = data
-
-    createPC()
-
-    socket = io(`${config.apiUrl}${NAMESPACE}`, {
-      auth: { token: data.access_token },
-      // зрителю обязательно указать streamer_id (сервер этого ждёт)
-      query: streamerId != null ? { streamer_id: String(streamerId) } : {},
-      autoConnect: true,
-      transports: ['websocket', 'polling']
-    })
-
-    attachSocketHandlers()
-
-    // Пингуем бэк для слежения за онлайном
-    pingTimer = setInterval(() => {
-      try { socket.emit('ping', {}) } catch (_) {}
-    }, 10_000)
-
-    // На случай, если negotiationneeded не сработает — включим автоцикл
-    scheduleAutoOffer(800)
-
-    isAuth.value = true
-  } catch (err) {
-    const e = err as AxiosError
-
-    console.error(e)
-
-    error.value = e
-  }
-}
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 </script>
 
 <template>
-  <div class="page">
-    <header>
-      <h1>Viewer</h1>
-      <div class="status">
-        <span :class="['dot', socketConnected ? 'on' : 'off']"></span>
-        {{ socketConnected ? 'Socket connected' : 'Socket disconnected' }}
-        <span v-if="connectionNote"> · {{ connectionNote }}</span>
-      </div>
-    </header>
+  <div>
+    <h1>Viewer for streamer #{{ streamerId }}</h1>
 
-    <main>
-      <div class="video-box">
-        <video ref="remoteVideo" autoplay playsinline :muted="muted"></video>
-        <div class="overlay">
-          <div class="badge">Stream</div>
-          <button class="mute" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
-        </div>
-      </div>
+    <p v-if="!isSocketConnected">
+      Подключение к сокету...
+    </p>
 
-      <details class="debug">
-        <summary>Debug info</summary>
-        <pre>streamerId: {{ streamerId }}</pre>
-        <pre>viewerKey: {{ viewerKey }}</pre>
-        <pre>socketId: {{ socketId || '—' }}</pre>
-        <pre>pc: {{ pcState }}</pre>
-      </details>
-    </main>
+    <div style="max-width: 600px;">
+      <VideoPlayer ref="playerRef" :src-object="remoteStream" />
+    </div>
+
+    <p>
+      Ждём, когда стример запустит стрим...
+    </p>
   </div>
-
-  <button type="button" @click="auth">
-    Авторизация
-  </button>
-  <div v-if="isAuth">Успешно</div>
-  <div v-if="error">{{ JSON.stringify(error) }}</div>
-  <div v-if="info">{{ info }}</div>
 </template>
-
-<style>
-.page { max-width: 900px; margin: 0 auto; padding: 20px; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-header { display: flex; align-items: baseline; gap: 16px; }
-.status { color: #666; font-size: 14px; }
-.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; background:#bbb; vertical-align:middle; }
-.dot.on { background:#2ecc71; }
-.dot.off { background:#e74c3c; }
-.video-box { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; overflow: hidden; }
-video { width: 100%; height: 100%; object-fit: cover; background:#000; }
-.overlay { position: absolute; inset: 0; display:flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
-.badge { margin: 12px; background: rgba(0,0,0,.6); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
-.mute { pointer-events: all; margin: 12px; padding:8px 12px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; }
-.debug { margin-top: 16px; }
-pre { background:#f8f8f8; padding:10px; border-radius:8px; overflow:auto; }
-</style>
