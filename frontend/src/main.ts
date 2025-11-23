@@ -1,12 +1,12 @@
-import './assets/style/main.scss'
+import './assets/style/reset.scss'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { createPinia } from 'pinia'
-import '@/plugins/svg-icons'
+// import '@/plugins/svg-icons'
 import { config } from '@/config.ts'
 import * as Sentry from '@sentry/vue'
-import { setupErrorHandler } from '@/utils/initErrorHandler.ts'
 import router from '@/router'
+import 'plyr/dist/plyr.css'
 
 const setupSentry = (app: ReturnType<typeof createApp>) => {
   if (!config.sentryDsn) return
@@ -27,7 +27,6 @@ const initApp = () => {
   const pinia = createPinia()
   app.use(pinia)
   setupSentry(app)
-  setupErrorHandler(app)
   app.use(router)
   app.mount('#app')
 }
