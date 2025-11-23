@@ -11,7 +11,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /etc/letsencrypt/live/nex2ilo.com/:/etc/ssl/certs/nex2ilo.com/
+      - /etc/letsencrypt:/etc/letsencrypt
     depends_on:
       - kazgirls-api
     logging:
