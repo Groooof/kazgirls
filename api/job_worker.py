@@ -41,7 +41,7 @@ async def job_startup(ctx: JobContext) -> None:  # pragma: no cover
     ctx["_exit_stack"] = exit_stack
 
     ctx["db_session"] = ctx["_db_maker"]()
-    ctx["redis_session"] = Redis(connection_pool=ctx["_redis_pool"])
+    ctx["redis_session"] = Redis(connection_pool=ctx["_redis_pool"], decode_responses=True)
     ctx["httpx_client"] = AsyncClient()
     ctx["sio"] = socketio.AsyncServer(
         async_mode="asgi",
