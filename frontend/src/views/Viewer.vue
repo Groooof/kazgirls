@@ -5,7 +5,7 @@ import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
 
-const isProd = true
+const isProd = false
 const streamerId = isProd ? 4 : 2
 
 const rtcConfig: RTCConfiguration = {

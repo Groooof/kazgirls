@@ -128,10 +128,16 @@ const exitPip = async () => {
   }
 }
 
-const play = () => {
-  if (!videoPlayerRef.value) return
+const play = async () => {
+  const video = videoPlayerRef.value
+  if (!video) return
 
-  videoPlayerRef.value.play()
+  try {
+    await video.play()
+    console.log('[Video] play() OK')
+  } catch (e) {
+    console.error('[Video] play() FAILED', e)
+  }
 }
 
 defineExpose({
