@@ -6,8 +6,10 @@ import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
 
+const isProd = false
+
 const route = useRoute()
-const streamerId = 4
+const streamerId = isProd ? 4 : 2
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -26,12 +28,19 @@ const isStreaming = ref(false)
 const isSocketConnected = ref(false)
 
 const initSocket = (access_token: string) => {
-  // http://localhost:8000
-  socket.value = io(`${config.apiUrl}/streamers`, {
-    auth: { token: access_token },
-    autoConnect: true,
-    transports: ['websocket'],
-  })
+  if (isProd) {
+    socket.value = io(`${config.apiUrl}/streamers`, {
+      auth: { token: access_token },
+      autoConnect: true,
+      transports: ['websocket'],
+    })
+  } else {
+    socket.value = io('http://localhost:8000/streamers', {
+      auth: { token: access_token },
+      autoConnect: true,
+      transports: ['websocket'],
+    })
+  }
 
   socket.value.on('connect', () => {
     isSocketConnected.value = true
@@ -71,7 +80,11 @@ const getLocalMedia = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     })
     localStream.value = stream
   } catch (e) {
@@ -159,19 +172,22 @@ const stopStream = () => {
 }
 
 onMounted(async () => {
-  // prod
-  const { data } = await axios.post('/api/v1/tokens/login', {
-    username: "streamer_2",
-    password: "test",
-  })
+  if (isProd) {
+    const { data } = await axios.post('/api/v1/tokens/login', {
+      username: "streamer_2",
+      password: "test",
+    })
 
-  // dev
-  // const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-  //   username: "stream",
-  //   password: "test",
-  // })
+    initSocket(data.access_token)
+  } else {
+    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
+      username: "stream",
+      password: "test",
+    })
 
-  initSocket(data.access_token)
+    initSocket(data.access_token)
+  }
+
   await getLocalMedia()
 })
 
@@ -187,7 +203,7 @@ onBeforeUnmount(() => {
 
     <div style="max-width: 600px;">
       <!-- Локальное видео стримера -->
-      <VideoPlayer :src-object="localStream" />
+      <VideoPlayer :src-object="localStream" play muted />
     </div>
 
     <div style="margin-top: 16px; display: flex; gap: 8px;">

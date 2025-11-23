@@ -11,6 +11,8 @@ export interface AppVideoPlayerProps {
   poster?: string
   aspectRatio?: AppVideoPlayerAspectRatio
   srcObject?: MediaStream | null
+  muted?: boolean
+  play?: boolean
 }
 
 export interface AppVideoPlayerEmit {
@@ -22,6 +24,8 @@ const props = withDefaults(defineProps<AppVideoPlayerProps>(), {
   markerPoints: () => [],
   aspectRatio: '16:9',
   srcObject: null,
+  muted: false,
+  play: false,
 })
 
 const emit = defineEmits<AppVideoPlayerEmit>()
@@ -29,13 +33,23 @@ const emit = defineEmits<AppVideoPlayerEmit>()
 const videoPlayerRef = useTemplateRef<HTMLVideoElement>('videoPlayerRef')
 const videoPlayerInstance = ref()
 
+const getVideoPlayerControls = () => {
+  const controls: string[] = []
+
+  if (props.play) {
+    controls.push('play')
+  }
+
+  controls.push('volume')
+  controls.push('fullscreen')
+
+  return controls
+}
+  
+
 const videoPlayerOptions: Plyr.Options = {
   ratio: props.aspectRatio,
-  controls: [
-    'play',
-    'volume',
-    'fullscreen',
-  ]
+  controls: getVideoPlayerControls(),
 }
 
 const initPlayer = (): void => {
@@ -78,7 +92,7 @@ defineExpose({
       playsinline
       controls
       autoplay
-      muted
+      :muted="muted"
     ></video>
   </div>
 </template>

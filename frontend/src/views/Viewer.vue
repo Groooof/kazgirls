@@ -6,8 +6,10 @@ import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
 
+const isProd = false
+
 const route = useRoute()
-const streamerId = 4
+const streamerId = isProd ? 4 : 2
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -25,13 +27,21 @@ const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
 const isPip = ref(false)
 
 const initSocket = (access_token: string) => {
-  // http://localhost:8000
-  socket.value = io(`${config.apiUrl}/streamers`, {
-    auth: { token: access_token },
-    autoConnect: true,
-    query: { streamer_id: String(streamerId) },
-    transports: ['websocket', 'polling'],
-  })
+  if (isProd) {
+    socket.value = io(`${config.apiUrl}/streamers`, {
+      auth: { token: access_token },
+      autoConnect: true,
+      query: { streamer_id: String(streamerId) },
+      transports: ['websocket', 'polling'],
+    })
+  } else {
+    socket.value = io('http://localhost:8000/streamers', {
+      auth: { token: access_token },
+      autoConnect: true,
+      query: { streamer_id: String(streamerId) },
+      transports: ['websocket', 'polling'],
+    })
+  }
 
   socket.value.on('connect', () => {
     console.log('[VIEWER] socket connected')
@@ -172,20 +182,28 @@ const handleVisibilityChange = async () => {
   }
 }
 
+const test = ref('')
+
 onMounted(async() => {
-  // prod
-  const { data } = await axios.post('/api/v1/tokens/login', {
-    username: "viewer_2",
-    password: "test",
-  })
+  if (isProd) {
+    const { data } = await axios.post('/api/v1/tokens/login', {
+      username: "viewer_2",
+      password: "test",
+    })
 
-  // dev
-  // const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-  //   username: "girl",
-  //   password: "test",
-  // })
+    initSocket(data.access_token)
+  } else {
+    try {
+      const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
+        username: "girl",
+        password: "test",
+      })
 
-  initSocket(data.access_token)
+      initSocket(data.access_token)
+    } catch (err) {
+      test.value = JSON.stringify(err)
+    }
+  }
 
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
@@ -213,5 +231,7 @@ onBeforeUnmount(() => {
     <p>
       Ждём, когда стример запустит стрим...
     </p>
+
+    {{ test }}
   </div>
 </template>
