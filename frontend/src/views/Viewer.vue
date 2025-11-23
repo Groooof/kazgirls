@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { useRoute } from 'vue-router'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
 
-const isProd = true
+const isProd = false
 
 const route = useRoute()
 const streamerId = isProd ? 4 : 2
@@ -157,102 +157,49 @@ const cleanupConnection = () => {
   remoteStream.value = null
 }
 
+const containterRef = useTemplateRef('containterRef')
+
 const handleVisibilityChange = async () => {
   const player = playerRef.value
-  const video = player?.getVideoElement?.()
+  if (!player) return
 
-  if (!video) return
-  if (!remoteStream.value) return // нет стрима — нет PiP
+  const video = player.getVideoElement?.()
+  if (!video || !remoteStream.value) return
 
-  // Не пытаемся включать PiP, пока видео даже не начало играть
+  // На всякий случай — ждём, пока есть данные
   if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     return
   }
 
-  const docAny = document as any
-  const videoAny = video as any
+  const anyDoc = document as any
 
-  const hasStandardPiP =
-    'pictureInPictureEnabled' in document &&
-    typeof videoAny.requestPictureInPicture === 'function'
+  console.log(document.visibilityState)
 
-  const hasWebkitPiP =
-    typeof videoAny.webkitSupportsPresentationMode === 'function' &&
-    videoAny.webkitSupportsPresentationMode('picture-in-picture')
-
-  const enterStandardPiP = async () => {
-    if (!hasStandardPiP || !docAny.pictureInPictureEnabled) return
-    if (docAny.pictureInPictureElement && docAny.pictureInPictureElement !== video) return
-    if (docAny.pictureInPictureElement === video) return
-
-    try {
-      await videoAny.requestPictureInPicture()
-      console.log('[VIEWER] entered PiP (standard)')
-    } catch (e) {
-      console.error('[VIEWER] requestPictureInPicture error', e)
-    }
-  }
-
-  const exitStandardPiP = async () => {
-    if (docAny.pictureInPictureElement === video) {
-      try {
-        await docAny.exitPictureInPicture()
-        console.log('[VIEWER] exit PiP (standard)')
-      } catch (e) {
-        console.error('[VIEWER] exitPictureInPicture error', e)
-      }
-    }
-  }
-
-  const enterWebkitPiP = () => {
-    try {
-      videoAny.webkitSetPresentationMode('picture-in-picture')
-      console.log('[VIEWER] entered PiP (webkit)')
-    } catch (e) {
-      console.error('[VIEWER] webkitSetPresentationMode(pip) error', e)
-    }
-  }
-
-  const exitWebkitPiP = () => {
-    try {
-      if (videoAny.webkitPresentationMode === 'picture-in-picture') {
-        videoAny.webkitSetPresentationMode('inline')
-        console.log('[VIEWER] exit PiP (webkit)')
-      }
-    } catch (e) {
-      console.error('[VIEWER] webkitSetPresentationMode(inline) error', e)
-    }
-  }
-
-  const enterPiP = async () => {
-    if (hasStandardPiP) {
-      await enterStandardPiP()
-    } else if (hasWebkitPiP) {
-      enterWebkitPiP()
-    } else {
-      // Нет поддержки PiP — просто ничего не делаем
-      console.log('[VIEWER] PiP not supported on this device')
-    }
-  }
-
-  const exitPiP = async () => {
-    if (hasStandardPiP) {
-      await exitStandardPiP()
-    } else if (hasWebkitPiP) {
-      exitWebkitPiP()
-    }
-  }
-
+  // сворачивание / переход на другую вкладку
   if (document.visibilityState === 'hidden') {
-    // Пытаемся войти в PiP при сворачивании/уходе
-    await enterPiP()
-  } else if (document.visibilityState === 'visible') {
-    // При возврате на вкладку — выходим
-    await exitPiP()
+  
+    // Пытаемся включить PiP через Plyr (enterPip)
+    try {
+      await player.enterPip?.()
+    } catch (e) {
+      console.error('[VIEWER] enterPip error', e)
+    }
+    return
+  }
+
+  // возврат на вкладку — выходим из PiP
+  if (document.visibilityState === 'visible') {
+    if (containterRef.value) {
+      containterRef.value.click()
+    }
+
+    // try {
+    //   await player.exitPip?.()
+    // } catch (e) {
+    //   console.error('[VIEWER] exitPip error', e)
+    // }
   }
 }
-
-const test = ref('')
 
 onMounted(async() => {
   if (isProd) {
@@ -263,17 +210,12 @@ onMounted(async() => {
 
     initSocket(data.access_token)
   } else {
-    console.log(4)
-    try {
-      const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-        username: "girl",
-        password: "test",
-      })
+    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
+      username: "girl",
+      password: "test",
+    })
 
-      initSocket(data.access_token)
-    } catch (err) {
-      test.value = JSON.stringify(err)
-    }
+    initSocket(data.access_token)
   }
 
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -288,7 +230,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
+  <div ref="containterRef">
     <h1>Viewer for streamer #{{ streamerId }}</h1>
 
     <p v-if="!isSocketConnected">
@@ -296,13 +238,11 @@ onBeforeUnmount(() => {
     </p>
 
     <div style="max-width: 600px;">
-      <VideoPlayer ref="playerRef" :src-object="remoteStream" />
+      <VideoPlayer ref="playerRef" :src-object="remoteStream" @get-pip-mode="val => isPip = val" />
     </div>
 
     <p>
       Ждём, когда стример запустит стрим...
     </p>
-
-    {{ test }}
   </div>
 </template>

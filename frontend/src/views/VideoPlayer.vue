@@ -1,8 +1,6 @@
 <script lang="ts" setup>
 import Plyr from 'plyr'
-import { onMounted, ref, useTemplateRef, watch, nextTick } from 'vue'
-
-export type TimeCodeData = Plyr.MarkersPoints
+import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 
 export type AppVideoPlayerAspectRatio = '16:9' | '4:3'
 
@@ -12,7 +10,6 @@ export interface AppVideoPlayerProps {
   aspectRatio?: AppVideoPlayerAspectRatio
   srcObject?: MediaStream | null
   muted?: boolean
-  play?: boolean
 }
 
 export interface AppVideoPlayerEmit {
@@ -21,45 +18,35 @@ export interface AppVideoPlayerEmit {
 
 const props = withDefaults(defineProps<AppVideoPlayerProps>(), {
   poster: '',
-  markerPoints: () => [],
   aspectRatio: '16:9',
   srcObject: null,
   muted: false,
-  play: false,
 })
 
 const emit = defineEmits<AppVideoPlayerEmit>()
 
-const videoPlayerRef = useTemplateRef<HTMLVideoElement>('videoPlayerRef')
-const videoPlayerInstance = ref()
+const videoPlayerRef = ref<HTMLVideoElement | null>(null)
+const videoPlayerInstance = ref<Plyr | null>(null)
 
-const getVideoPlayerControls = () => {
-  const controls: string[] = []
-
-  if (props.play) {
-    controls.push('play')
-  }
-
-  controls.push('volume')
-  controls.push('fullscreen')
-  controls.push('pip')
-
-  return controls
-}
-  
+// если srcObject (WebRTC) — это стрим
+const isStream = computed(() => !!props.srcObject)
 
 const videoPlayerOptions: Plyr.Options = {
   ratio: props.aspectRatio,
-  controls: getVideoPlayerControls(),
+  // ВАЖНО: добавляем pip в контролы, чтобы Plyr не отключал свой функционал
+  controls: ['play', 'volume', 'pip', 'fullscreen'],
+  pip: true,
 }
 
-const initPlayer = (): void => {
+const initPlayer = () => {
   if (!videoPlayerRef.value) return
 
+  // Инициализируем Plyr ВСЕГДА (и для url, и для stream),
+  // но srcObject будем навешивать сами.
   const instance = new Plyr(videoPlayerRef.value, videoPlayerOptions)
-
   videoPlayerInstance.value = instance
 
+  // события PiP от Plyr (они просто прокидывают нативные)
   instance.on('enterpictureinpicture', () => {
     emit('get-pip-mode', true)
   })
@@ -69,21 +56,83 @@ const initPlayer = (): void => {
   })
 }
 
-watch(() => [props.srcObject, videoPlayerRef.value], () => {
-  if (videoPlayerRef.value && props.srcObject) {
-    videoPlayerRef.value.srcObject = props.srcObject
-    videoPlayerRef.value.muted = props.muted
-    // Автоплей после установки потока
-    videoPlayerRef.value.play().catch(console.error)
-  }
-}, { immediate: true })
+// навешиваем srcObject (это НЕ ломает Plyr — он использует тот же <video>)
+watch(
+  () => props.srcObject,
+  (newStream) => {
+    const el = videoPlayerRef.value
+    if (!el) return
+
+    if (!newStream) {
+      ;(el as any).srcObject = null
+      return
+    }
+
+    ;(el as any).srcObject = newStream
+    el.muted = props.muted
+
+    el
+      .play()
+      .then(() => console.log('[VideoPlayer] play ok'))
+      .catch((err) => console.error('[VideoPlayer] play error', err))
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   initPlayer()
 })
 
+onBeforeUnmount(() => {
+  if (videoPlayerInstance.value) {
+    videoPlayerInstance.value.destroy()
+    videoPlayerInstance.value = null
+  }
+})
+
+// 👉 Экспортируем и video, и plyr-инстанс наружу
+const enterPip = async () => {
+  const inst: any = videoPlayerInstance.value
+  const video = videoPlayerRef.value as any
+
+  // сначала пробуем через Plyr (togglePictureInPicture)
+  if (inst && typeof inst.togglePictureInPicture === 'function') {
+    try {
+      await inst.togglePictureInPicture()
+    } catch (e) {
+      console.error('[VideoPlayer] plyr togglePictureInPicture error', e)
+    }
+    return
+  }
+
+  // fallback — напрямую через video
+  if (video && typeof video.requestPictureInPicture === 'function') {
+    try {
+      await video.requestPictureInPicture()
+    } catch (e) {
+      console.error('[VideoPlayer] native requestPiP error', e)
+    }
+  }
+}
+
+const exitPip = async () => {
+  const video = videoPlayerRef.value as any
+  const docAny = document as any
+
+  if (docAny.pictureInPictureElement === video) {
+    try {
+      await docAny.exitPictureInPicture()
+    } catch (e) {
+      console.error('[VideoPlayer] exit PiP error', e)
+    }
+  }
+}
+
 defineExpose({
-  getVideoElement: () => videoPlayerRef.value
+  getVideoElement: () => videoPlayerRef.value,
+  getPlyrInstance: () => videoPlayerInstance.value,
+  enterPip,
+  exitPip,
 })
 </script>
 
@@ -91,7 +140,7 @@ defineExpose({
   <div>
     <video
       ref="videoPlayerRef"
-      :src="url"
+      :src="!srcObject ? url : undefined"
       :data-poster="poster"
       playsinline
       controls
