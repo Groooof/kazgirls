@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
-import { nextTick } from 'process'
 
 const isProd = true
 const streamerId = isProd ? 4 : 2
@@ -53,7 +52,7 @@ const createPeerConnection = () => {
     hasStream.value = true
 
     await nextTick()
-    
+
     forcePlay()
   }
 
