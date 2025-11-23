@@ -170,6 +170,16 @@ def init_app():
     return app
 
 
+def cutomize_translate_request(func):
+    async def wrapper(*args, **kwargs):
+        environ = await func(*args, **kwargs)
+        if x_real_ip := environ.get("HTTP_X_REAL_IP"):
+            environ["REMOTE_ADDR"] = x_real_ip
+        return environ
+
+    return wrapper
+
+
 def init_sio():
     allow_origins = socketio_origins if not settings.is_local else ["*"]
     sio = socketio.AsyncServer(
@@ -180,6 +190,7 @@ def init_sio():
         engineio_logger=False,
         transports=["websocket"],
     )
+    sio.eio._async["translate_request"] = cutomize_translate_request(sio.eio._async["translate_request"])
     if pwd := settings.sio_instrument_password:
         sio.instrument(
             mode="development",  # TODO: for prod set prod
