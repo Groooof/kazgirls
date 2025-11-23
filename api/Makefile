@@ -18,3 +18,6 @@ test-cov: test
 
 run:
 	uv run uvicorn app:get_app --factory --proxy-headers --forwarded-allow-ips '*' --reload
+
+build:
+	docker build -f .docker/Dockerfile --target api-prod -t kazgirls-api:latest .

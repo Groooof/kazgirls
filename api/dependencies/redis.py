@@ -29,7 +29,9 @@ def with_redis():
         @wraps(func)
         async def wrapper(*args, **kwargs):
             async with _get_redis() as redis:
-                return await func(*args, redis=redis, **kwargs)
+                if "redis" not in kwargs:
+                    kwargs["redis"] = redis
+                return await func(*args, **kwargs)
 
         return wrapper
 

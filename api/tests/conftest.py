@@ -4,6 +4,7 @@ from random import sample
 
 import fakeredis
 import pytest_asyncio
+import socketio
 from alembic import command
 from alembic.config import Config
 from anyio import to_thread
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.templating import Jinja2Templates
 
 from admin.bases import AdminBackend
-from app import FastAPI, init_admin, init_app
+from app import FastAPI, init_admin, init_app, init_sockets_app
 from app_logging import set_logging_config
 from dependencies.db import get_db
 from dependencies.httpx import get_httpx_client
@@ -122,7 +123,7 @@ async def db(engine: AsyncEngine) -> AsyncSession:
 @pytest_asyncio.fixture
 async def redis() -> Redis:
     server = fakeredis.FakeServer()
-    r = fakeredis.aioredis.FakeRedis(server=server)
+    r = fakeredis.aioredis.FakeRedis(server=server, decode_responses=True)
     yield r
 
 
@@ -134,7 +135,22 @@ async def arq_redis():
 
 
 @pytest_asyncio.fixture
-async def app(engine: AsyncEngine, db: AsyncSession, redis: Redis, arq_redis: ArqRedis) -> FastAPI:
+async def sio() -> socketio.AsyncServer:
+    server = socketio.AsyncServer(
+        async_mode="asgi",
+        client_manager=socketio.AsyncRedisManager(str(databases.sockets_redis_url)),
+        cors_allowed_origins="*",
+        logger=False,
+        engineio_logger=False,
+        transports=["websocket"],
+    )
+    yield server
+
+
+@pytest_asyncio.fixture
+async def app(
+    engine: AsyncEngine, db: AsyncSession, redis: Redis, arq_redis: ArqRedis, sio: socketio.AsyncServer
+) -> FastAPI:
     """
     Создаем базу перед каждым тестом
     Если вынести инициализацию бд в override_get_db, то любой запрос к app будет с чистой базой,
@@ -180,8 +196,8 @@ async def app(engine: AsyncEngine, db: AsyncSession, redis: Redis, arq_redis: Ar
     internal_app.dependency_overrides[get_task_manager] = override_get_task_manager
     internal_app.dependency_overrides[get_httpx_client] = override_get_httpx_client
     internal_app.dependency_overrides[get_templates] = override_get_templates
-
-    yield internal_app
+    sockets_app = init_sockets_app(sio, internal_app)
+    yield sockets_app
 
 
 @pytest_asyncio.fixture

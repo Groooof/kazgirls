@@ -25,15 +25,16 @@ from starlette.templating import Jinja2Templates
 from admin.bases import CustomAdmin, authentication_backend
 from app_logging import init_sentry, set_logging_config
 from dependencies.db import EngineTypeEnum, _get_db, engines
-from dependencies.sockets import server as sio
-from endpoints import external_api_router, internal_api_router
+from endpoints import router
 from exceptions.bases import LogicException
 from settings.conf import databases, settings
 from sockets import *  # noqa: F403
+from sockets import register_handlers
 from utils.handlers import any_exception_handler, logic_exception_handler, unhandled_validation_exception_handler
 from utils.middleware import TracemallocMiddleware
 
-origins = []
+origins = ["https://nex2ilo.com"]
+socketio_origins = origins + ["https://admin.socket.io"]
 
 
 class FastAPI(_FastAPI):
@@ -135,7 +136,7 @@ def init_app():
     )
     app.mount("/static", StaticFiles(directory=settings.project_root / "statics", check_dir=False), name="static")
 
-    allow_origins = origins if settings.is_prod else ["*"]
+    allow_origins = origins if not settings.is_local else ["*"]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
@@ -155,8 +156,7 @@ def init_app():
     app.add_exception_handler(RequestValidationError, unhandled_validation_exception_handler)
     app.add_exception_handler(StarletteHTTPException, any_exception_handler)
 
-    app.include_router(external_api_router, prefix=settings.api_v1_str)
-    app.include_router(internal_api_router, prefix=settings.api_internal_str)
+    app.include_router(router, prefix=settings.api_v1_str)
 
     @app.get("/docs", include_in_schema=False)
     async def scalar_docs():
@@ -170,7 +170,40 @@ def init_app():
     return app
 
 
-def init_sockets_app(fastapi_app):
+def cutomize_translate_request(func):
+    async def wrapper(*args, **kwargs):
+        environ = await func(*args, **kwargs)
+        if x_real_ip := environ.get("HTTP_X_REAL_IP"):
+            environ["REMOTE_ADDR"] = x_real_ip
+        return environ
+
+    return wrapper
+
+
+def init_sio():
+    allow_origins = socketio_origins if not settings.is_local else ["*"]
+    sio = socketio.AsyncServer(
+        async_mode="asgi",
+        client_manager=socketio.AsyncRedisManager(str(databases.sockets_redis_url)),
+        cors_allowed_origins=allow_origins,
+        logger=False,
+        engineio_logger=False,
+        transports=["websocket"],
+    )
+    sio.eio._async["translate_request"] = cutomize_translate_request(sio.eio._async["translate_request"])
+    if pwd := settings.sio_instrument_password:
+        sio.instrument(
+            mode="development",  # TODO: for prod set prod
+            auth={
+                "username": "admin",
+                "password": pwd,
+            },
+        )
+    return sio
+
+
+def init_sockets_app(sio, fastapi_app):
+    register_handlers(sio)
     return socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
 
@@ -189,5 +222,6 @@ def get_app() -> FastAPI:
         db=_get_db,
         authentication_backend=authentication_backend,
     )
-    sockets_app = init_sockets_app(app)
+    sio = init_sio()
+    sockets_app = init_sockets_app(sio, app)
     return sockets_app

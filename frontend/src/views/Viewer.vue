@@ -2,8 +2,8 @@
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
 import axios, { AxiosError } from 'axios'
 import { io } from 'socket.io-client'
+import { config } from '@/config.ts'
 
-const SIGNALING_URL = 'http://localhost:8000'
 const NAMESPACE = '/streamers'
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
 
@@ -303,7 +303,7 @@ const auth = async() => {
 
     createPC()
 
-    socket = io({
+    socket = io(`${config.apiUrl}${NAMESPACE}`, {
       auth: { token: data.access_token },
       // зрителю обязательно указать streamer_id (сервер этого ждёт)
       query: streamerId != null ? { streamer_id: String(streamerId) } : {},

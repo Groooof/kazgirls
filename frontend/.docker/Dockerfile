@@ -4,9 +4,10 @@ ARG RELEASE
 ENV SENTRY_RELEASE=$RELEASE
 
 WORKDIR /code
-ENV PATH /code/node_modules/.bin:$PATH
+ENV PATH=/code/node_modules/.bin:$PATH
 COPY . .
 RUN npm i --no-progress --non-interactive
+RUN cp .docker/docker.env .env
 
 # ---------- Frontend build: dev ----------
 FROM base-stage-node AS build-dev
@@ -18,7 +19,6 @@ RUN npm run build-prod
 
 # ---------- NGINX ----------
 FROM nginx:stable-alpine AS nginx-base
-COPY ./nginx/base.conf /etc/nginx/conf.d/base.conf
 
 # ---------- NGINX: local ----------
 FROM nginx-base AS nginx-local

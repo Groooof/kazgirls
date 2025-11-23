@@ -4,6 +4,7 @@ import signal
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Concatenate, Optional, overload
+from urllib.parse import parse_qs
 
 import orjson
 import phonenumbers
@@ -307,3 +308,10 @@ def method_dispatch[KeyT, ValT, SelfT, **ParamsT](
     func: Callable[Concatenate[SelfT, ParamsT], Awaitable[KeyT]],
 ) -> MethodDispatcher[KeyT, ValT, SelfT, ParamsT]:
     return MethodDispatcher(func)
+
+
+def get_socketio_query_param(environ, name) -> str | None:
+    query = environ.get("QUERY_STRING", "")
+    params = parse_qs(query)
+    param_list = params.get(name)
+    return param_list and param_list[0] or None

@@ -1,6 +1,7 @@
 services:
   kazgirls-frontend:
     container_name: kazgirls-frontend
+    restart: unless-stopped
     hostname: kazgirls-frontend
     build:
       context: ./frontend
@@ -8,11 +9,14 @@ services:
       target: nginx-local
     env_file:
       - frontend/.docker/docker.env
+    depends_on:
+      - kazgirls-api
     ports:
       - "80:80"
 
   kazgirls-api:
     container_name: kazgirls-api
+    restart: unless-stopped
     hostname: kazgirls-api
     build:
       context: ./api
@@ -20,12 +24,30 @@ services:
       target: api-local
     env_file:
       - api/.docker/docker.env
-    ports:
-      - "8002:8002"
+    depends_on:
+      - kazgirls-db
+      - kazgirls-redis
+
+  kazgirls-jobs:
+    container_name: kazgirls-jobs
+    restart: unless-stopped
+    hostname: kazgirls-jobs
+    build:
+      context: ./api
+      dockerfile: .docker/Dockerfile
+      target: api-local
+    env_file:
+      - api/.docker/docker.env
+    depends_on:
+      - kazgirls-db
+      - kazgirls-redis
+    volumes:
+      - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    entrypoint: ["arq", "job_worker.Worker"]
 
   kazgirls-redis:
     container_name: kazgirls-redis
-    restart: always
+    restart: unless-stopped
     image: redis:8.0.2
     hostname: kazgirls-redis
     command: redis-server --requirepass kazgirls
@@ -42,7 +64,7 @@ services:
   kazgirls-db:
     container_name: kazgirls-database
     hostname: kazgirls-db
-    restart: always
+    restart: unless-stopped
     image: postgres:17
     ports:
       - "5411:5432"

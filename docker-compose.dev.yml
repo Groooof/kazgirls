@@ -2,35 +2,64 @@ version: "2"
 services:
   kazgirls-frontend:
     image: kazgirls-frontend
+    restart: unless-stopped
     container_name: kazgirls-frontend
     hostname: kazgirls-frontend
     env_file:
       - kazgirls-frontend-docker.env
     ports:
-      - "4545:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
     depends_on:
       - kazgirls-api
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "10"
+        compress: "false"
+        mode: "non-blocking"
+        max-buffer-size: "10m"
 
   kazgirls-api:
     image: kazgirls-api
+    restart: unless-stopped
     container_name: kazgirls-api
     hostname: kazgirls-api
     env_file:
       - kazgirls-api-docker.env
-    ports:
-      - "8006:8002"
-    depends_on:
-      - kazgirls-redis
     volumes:
       - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "10"
+        compress: "false"
+        mode: "non-blocking"
+        max-buffer-size: "10m"
 
-  kazgirls-redis:
-    image: redis:8.0.2
-    container_name: kazgirls-redis
-    hostname: kazgirls-redis
-    ports:
-      - "6845:6379"
+  kazgirls-jobs:
+    image: kazgirls-api
+    restart: unless-stopped
+    container_name: kazgirls-jobs
+    hostname: kazgirls-jobs
+    env_file:
+      - kazgirls-api-docker.env
+    volumes:
+      - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    entrypoint: ["arq", "job_worker.Worker"]
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "10"
+        compress: "false"
+        mode: "non-blocking"
+        max-buffer-size: "10m"
 
   kazgirls-migrate:
     image: kazgirls-api

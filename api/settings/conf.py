@@ -33,11 +33,11 @@ class Settings(CustomBaseSettings):
     debug: bool = False
     server_role: ServerRole = ServerRole.local
     enable_request_log: bool = False
+    arq_queue: str = "all"
 
     root_path: str = "/api"
     project_root: Path = Path(__file__).resolve().parent.parent
     api_v1_str: str = "/api/v1"
-    api_internal_str: str = "/api-internal/v1"
 
     sentry_url: str = ""
     log_level: str = "info" if server_role == ServerRole.prod else "debug"
@@ -45,9 +45,8 @@ class Settings(CustomBaseSettings):
     local_log_path: str = ""
     use_tracemalloc: bool = False
     echo_sql: bool = False
-
+    sio_instrument_password: str = ""
     app_reload: bool = server_role != ServerRole.prod
-    frontend_host: str = "https://link.kazgirls.com"
 
     @property
     def is_prod(self):
@@ -56,6 +55,11 @@ class Settings(CustomBaseSettings):
     @property
     def is_local(self):
         return self.server_role == ServerRole.local
+
+
+class SocketsNamespaces(CustomBaseSettings):
+    streamers: str = "/streamers"
+    lobby: str = "/lobby"
 
 
 class OtherSettings(CustomBaseSettings):
@@ -90,6 +94,11 @@ def get_settings() -> Settings:
 
 
 @lru_cache
+def get_sockets_namespaces() -> SocketsNamespaces:
+    return SocketsNamespaces()
+
+
+@lru_cache
 def get_other() -> OtherSettings:
     return OtherSettings()
 
@@ -101,4 +110,5 @@ def get_database_settings() -> Databases:
 
 settings: Settings = get_settings()
 other_settings: OtherSettings = get_other()
+sockets_namespaces: SocketsNamespaces = get_sockets_namespaces()
 databases: Databases = get_database_settings()
