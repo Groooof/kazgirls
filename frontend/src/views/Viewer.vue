@@ -86,6 +86,8 @@ const createPeerConnection = () => {
   console.log('[VIEWER] createPeerConnection')
   pc.value = new RTCPeerConnection(rtcConfig)
 
+  remoteStream.value = new MediaStream()
+
   pc.value.onicecandidate = (event) => {
     console.log('[VIEWER] onicecandidate', event.candidate)
     if (event.candidate) {
@@ -99,24 +101,35 @@ const createPeerConnection = () => {
 
   pc.value.ontrack = (event) => {
     console.log('[VIEWER] ontrack', event.streams, event.track)
-    if (!remoteStream.value) {
-      remoteStream.value = new MediaStream()
-    }
-    remoteStream.value.addTrack(event.track)
-
-    console.log('REMOTE_STREAM: ', remoteStream.value)
+    remoteStream.value!.addTrack(event.track)
   }
 
   pc.value.onconnectionstatechange = () => {
-    console.log('[VIEWER] connection state:', pc.value?.connectionState)
+    const state = pc.value?.connectionState
+    console.log('[VIEWER] connection state:', state)
+    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+      console.log('[VIEWER] cleaning up after disconnect')
+      cleanupConnection()
+    }
   }
 }
 
 const handleOffer = async (offer: RTCSessionDescriptionInit) => {
   console.log('[VIEWER] handleOffer start', offer)
-  if (!pc.value) {
-    createPeerConnection()
+
+  // всегда создаём новый PC, старый — под нож
+  if (pc.value) {
+    try {
+      pc.value.getReceivers().forEach(r => r.track?.stop())
+      pc.value.close()
+    } catch (e) {
+      console.warn('[VIEWER] error closing old pc', e)
+    }
   }
+  pc.value = null
+  remoteStream.value = null
+
+  createPeerConnection()
   if (!pc.value) return
 
   await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
