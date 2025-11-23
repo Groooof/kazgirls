@@ -33,7 +33,8 @@ from sockets import register_handlers
 from utils.handlers import any_exception_handler, logic_exception_handler, unhandled_validation_exception_handler
 from utils.middleware import TracemallocMiddleware
 
-origins = []
+origins = ["https://nex2ilo.com"]
+socketio_origins = origins + ["https://admin.socket.io"]
 
 
 class FastAPI(_FastAPI):
@@ -135,7 +136,7 @@ def init_app():
     )
     app.mount("/static", StaticFiles(directory=settings.project_root / "statics", check_dir=False), name="static")
 
-    allow_origins = origins if settings.is_prod else ["*"]
+    allow_origins = origins if not settings.is_local else ["*"]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
@@ -170,14 +171,24 @@ def init_app():
 
 
 def init_sio():
-    return socketio.AsyncServer(
+    allow_origins = socketio_origins if not settings.is_local else ["*"]
+    sio = socketio.AsyncServer(
         async_mode="asgi",
         client_manager=socketio.AsyncRedisManager(str(databases.sockets_redis_url)),
-        cors_allowed_origins="*",
+        cors_allowed_origins=allow_origins,
         logger=False,
         engineio_logger=False,
         transports=["websocket"],
     )
+    if pwd := settings.sio_instrument_password:
+        sio.instrument(
+            mode="development",  # TODO: for prod set prod
+            auth={
+                "username": "admin",
+                "password": pwd,
+            },
+        )
+    return sio
 
 
 def init_sockets_app(sio, fastapi_app):

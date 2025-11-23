@@ -45,9 +45,8 @@ class Settings(CustomBaseSettings):
     local_log_path: str = ""
     use_tracemalloc: bool = False
     echo_sql: bool = False
-
+    sio_instrument_password: str = ""
     app_reload: bool = server_role != ServerRole.prod
-    frontend_host: str = "https://link.kazgirls.com"
 
     @property
     def is_prod(self):
