@@ -162,36 +162,93 @@ const handleVisibilityChange = async () => {
   const video = player?.getVideoElement?.()
 
   if (!video) return
+  if (!remoteStream.value) return // нет стрима — нет PiP
 
-  // @ts-ignore
-  const currentPipElement = document.pictureInPictureElement
-
-  // Свернули вкладку / ушли на другую
-  if (document.visibilityState === 'hidden') {
-    // Уже в PiP или браузер не умеет — ничего не делаем
-    // @ts-ignore
-    if (currentPipElement || !document.pictureInPictureEnabled) return
-
-    try {
-      // @ts-ignore
-      await video.requestPictureInPicture()
-    } catch (e) {
-      console.error('[VIEWER] request PiP error', e)
-    }
+  // Не пытаемся включать PiP, пока видео даже не начало играть
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     return
   }
 
-  // Вернулись на вкладку
-  if (document.visibilityState === 'visible') {
-    // @ts-ignore
-    if (currentPipElement === video) {
+  const docAny = document as any
+  const videoAny = video as any
+
+  const hasStandardPiP =
+    'pictureInPictureEnabled' in document &&
+    typeof videoAny.requestPictureInPicture === 'function'
+
+  const hasWebkitPiP =
+    typeof videoAny.webkitSupportsPresentationMode === 'function' &&
+    videoAny.webkitSupportsPresentationMode('picture-in-picture')
+
+  const enterStandardPiP = async () => {
+    if (!hasStandardPiP || !docAny.pictureInPictureEnabled) return
+    if (docAny.pictureInPictureElement && docAny.pictureInPictureElement !== video) return
+    if (docAny.pictureInPictureElement === video) return
+
+    try {
+      await videoAny.requestPictureInPicture()
+      console.log('[VIEWER] entered PiP (standard)')
+    } catch (e) {
+      console.error('[VIEWER] requestPictureInPicture error', e)
+    }
+  }
+
+  const exitStandardPiP = async () => {
+    if (docAny.pictureInPictureElement === video) {
       try {
-        // @ts-ignore
-        await document.exitPictureInPicture()
+        await docAny.exitPictureInPicture()
+        console.log('[VIEWER] exit PiP (standard)')
       } catch (e) {
-        console.error('[VIEWER] exit PiP error', e)
+        console.error('[VIEWER] exitPictureInPicture error', e)
       }
     }
+  }
+
+  const enterWebkitPiP = () => {
+    try {
+      videoAny.webkitSetPresentationMode('picture-in-picture')
+      console.log('[VIEWER] entered PiP (webkit)')
+    } catch (e) {
+      console.error('[VIEWER] webkitSetPresentationMode(pip) error', e)
+    }
+  }
+
+  const exitWebkitPiP = () => {
+    try {
+      if (videoAny.webkitPresentationMode === 'picture-in-picture') {
+        videoAny.webkitSetPresentationMode('inline')
+        console.log('[VIEWER] exit PiP (webkit)')
+      }
+    } catch (e) {
+      console.error('[VIEWER] webkitSetPresentationMode(inline) error', e)
+    }
+  }
+
+  const enterPiP = async () => {
+    if (hasStandardPiP) {
+      await enterStandardPiP()
+    } else if (hasWebkitPiP) {
+      enterWebkitPiP()
+    } else {
+      // Нет поддержки PiP — просто ничего не делаем
+      console.log('[VIEWER] PiP not supported on this device')
+    }
+  }
+
+  const exitPiP = async () => {
+    if (hasStandardPiP) {
+      await exitStandardPiP()
+    } else if (hasWebkitPiP) {
+      exitWebkitPiP()
+    }
+  }
+
+  if (document.visibilityState === 'hidden') {
+    // Пытаемся войти в PiP при сворачивании/уходе
+    await enterPiP()
+  } else if (document.visibilityState === 'visible') {
+    // При возврате на вкладку — выходим
+    await exitPiP()
   }
 }
 

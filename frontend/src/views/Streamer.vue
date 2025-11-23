@@ -81,9 +81,9 @@ const getLocalMedia = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
       },
     })
     localStream.value = stream

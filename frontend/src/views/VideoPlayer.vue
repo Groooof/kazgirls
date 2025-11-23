@@ -69,6 +69,7 @@ const initPlayer = (): void => {
 watch(() => [props.srcObject, videoPlayerRef.value], () => {
   if (videoPlayerRef.value && props.srcObject) {
     videoPlayerRef.value.srcObject = props.srcObject
+    videoPlayerRef.value.muted = props.muted
     // Автоплей после установки потока
     videoPlayerRef.value.play().catch(console.error)
   }
