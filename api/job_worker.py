@@ -25,7 +25,7 @@ async def startup(ctx: JobContext) -> None:  # pragma: no cover
     init_sentry()
 
     # ctx содержит redis, но он именно ArqRedis. Сделаем стандартный
-    redis_pool: ConnectionPool = ConnectionPool.from_url(databases.redis_url.unicode_string())
+    redis_pool: ConnectionPool = ConnectionPool.from_url(databases.redis_url.unicode_string(), decode_responses=True)
     ctx["_redis_pool"] = redis_pool
     ctx["_db_maker"] = partial(
         AsyncSession, bind=engines[EngineTypeEnum.DEFAULT_ENGINE], binds=get_binds(), expire_on_commit=True
@@ -41,7 +41,7 @@ async def job_startup(ctx: JobContext) -> None:  # pragma: no cover
     ctx["_exit_stack"] = exit_stack
 
     ctx["db_session"] = ctx["_db_maker"]()
-    ctx["redis_session"] = Redis(connection_pool=ctx["_redis_pool"], decode_responses=True)
+    ctx["redis_session"] = Redis(connection_pool=ctx["_redis_pool"])
     ctx["httpx_client"] = AsyncClient()
     ctx["sio"] = socketio.AsyncServer(
         async_mode="asgi",
