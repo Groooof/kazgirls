@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import axios from 'axios'
 import { config } from '@/config'
+import { nextTick } from 'process'
 
 const isProd = true
 const streamerId = isProd ? 4 : 2
@@ -43,7 +44,7 @@ const createPeerConnection = () => {
     }
   }
 
-  peer.ontrack = (event) => {
+  peer.ontrack = async (event) => {
     console.log('[VIEWER] ontrack', event.streams, event.track)
     if (!remoteStream.value) {
       remoteStream.value = new MediaStream()
@@ -51,6 +52,8 @@ const createPeerConnection = () => {
     remoteStream.value.addTrack(event.track)
     hasStream.value = true
 
+    await nextTick()
+    
     forcePlay()
   }
 
