@@ -8,8 +8,19 @@ services:
       - kazgirls-frontend-docker.env
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt/live/nex2ilo.com/:/etc/ssl/certs/nex2ilo.com/
     depends_on:
       - kazgirls-api
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "10"
+        compress: "false"
+        mode: "non-blocking"
+        max-buffer-size: "10m"
 
   kazgirls-api:
     image: kazgirls-api
@@ -21,6 +32,14 @@ services:
     volumes:
       - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "10"
+        compress: "false"
+        mode: "non-blocking"
+        max-buffer-size: "10m"
 
   kazgirls-jobs:
     image: kazgirls-api
@@ -32,6 +51,14 @@ services:
     volumes:
       - /var/log/kazgirls/app-logs:/var/log/kazgirls/
     entrypoint: ["arq", "job_worker.Worker"]
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "10"
+        compress: "false"
+        mode: "non-blocking"
+        max-buffer-size: "10m"
 
   kazgirls-migrate:
     image: kazgirls-api
