@@ -1,0 +1,7 @@
+from pydantic import BaseModel
+
+
+class StreamerSchema(BaseModel):
+    id: int
+    name: str
+    avatar_url: str | None = None

@@ -62,3 +62,7 @@ def fake_set(n=10, build=fake.pyint, **kwargs):
         res.add(build(**kwargs))
 
     return res
+
+
+def fake_sid() -> str:
+    return fake.pystr(16, 16)
