@@ -17,7 +17,7 @@ class JwtTokenService(BaseServiceAbstract):
     def decode_token(cls, token: str, secret_key: str, *, suppress: bool = False) -> dict | None:
         try:
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-        except jwt.exceptions.PyJWTError:
+        except (jwt.exceptions.PyJWTError, TypeError):
             if suppress:
                 return None
             raise
