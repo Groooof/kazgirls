@@ -1,10 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql.sqltypes import BigInteger, Integer
 
 from models.bases import BaseIdMixin, BaseSQLAlchemyModel, DateFieldsMixin
+
+if TYPE_CHECKING:
+    from models.streamers import StreamerProfile
 
 
 class User(BaseIdMixin[Integer], DateFieldsMixin, BaseSQLAlchemyModel):
@@ -19,6 +23,7 @@ class User(BaseIdMixin[Integer], DateFieldsMixin, BaseSQLAlchemyModel):
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
+    streamer_profile: Mapped["StreamerProfile"] = relationship(back_populates="user", uselist=False)
 
     def __str__(self) -> str:
         return self.username

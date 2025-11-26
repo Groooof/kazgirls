@@ -75,9 +75,10 @@ class BaseModelView(ModelView):
     pagination_enable = True
 
     column_type_formatters = BASE_FORMATTERS | {
+        float: lambda v: v and round(v, 2),
         datetime: lambda v: v
         and v.astimezone(pytz.timezone(other_settings.default_timezone)).strftime(other_settings.default_dt_format)
-        or ""
+        or "",
     }
 
     @no_type_check

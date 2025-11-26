@@ -47,6 +47,7 @@ class Settings(CustomBaseSettings):
     echo_sql: bool = False
     sio_instrument_password: str = ""
     app_reload: bool = server_role != ServerRole.prod
+    local_storage_path: str = "/var/lib/kazgirls/storage/"
 
     @property
     def is_prod(self):

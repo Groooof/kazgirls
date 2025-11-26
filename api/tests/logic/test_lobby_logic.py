@@ -38,7 +38,7 @@ async def test_get_free_online_streamers(db, redis):
     await connect_streamer(redis, 6, fake_sid())
 
     expected_streamers = [
-        StreamerSchema(id=5, name="Streamer 1"),
+        StreamerSchema(id=5, name="Streamer 1", rating=4.55),
         StreamerSchema(id=6, name="Streamer 2"),
     ]
     streamers = await get_free_online_streamers(db, redis)

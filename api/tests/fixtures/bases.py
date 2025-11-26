@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.factories.auth import UserFactory
+from tests.factories.streamers import StreamerProfileFactory
 
 
 async def load_fixtures(session: AsyncSession):
@@ -21,4 +22,5 @@ async def _load_users(session: AsyncSession):
             UserFactory.build(id=9, username="viewer_3", password="test", is_streamer=False),  # noqa: S106
         )
     )
+    session.add_all((StreamerProfileFactory.build(user_id=5, force_rating=4.546, force_rating_votes=12),))
     await session.commit()
