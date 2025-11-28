@@ -51,6 +51,8 @@ async def main():
     await sio.disconnect()
 
 
+from typing import ClassVar
+
 from redis.asyncio import Redis
 
 from dependencies.redis import with_redis
@@ -67,3 +69,36 @@ async def main2(redis: Redis):
     now_ts = int(utc_now().timestamp())
     viewers_count = await redis.zrange("test:1", 0, now_ts)
     print(viewers_count)
+
+
+class BaseError(Exception):
+    status: ClassVar[int]
+    error_code: ClassVar[str]
+    error: ClassVar[str]
+
+
+class Forbidden(BaseError):
+    status = 401
+    error_code = "INVALID_TOKEN"
+    error = "Доступ запрещен"
+
+
+class TokenExpired(BaseError):
+    status = 401
+    error_code = "TOKEN_EXPIRED"
+    error = "Срок действия токена истек"
+
+
+from typing import Literal
+
+from pydantic import BaseModel, create_model
+
+
+def create_error_model(errors: list[type[BaseError]], model_name: str = "HttpError") -> type[BaseModel]:
+    error_codes = [e.error_code for e in errors]
+    DynamicErrorCodeEnum = Literal[*error_codes]
+    return create_model(model_name, status=int, error_code=DynamicErrorCodeEnum, error=str)
+
+
+m = create_error_model([Forbidden, TokenExpired])
+print(m(status=401, error_code="INVALID_TOKEN2", error="123"))
