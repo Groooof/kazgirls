@@ -25,7 +25,7 @@ namespace = sockets_namespaces.streamers
 @with_db()
 @with_redis()
 async def connect(sid, environ, auth, db: AsyncSession, redis: Redis, sio: socketio.AsyncServer):
-    token = get_cookie(other_settings.access_token_cookie_name)
+    token = get_cookie(environ, other_settings.access_token_cookie_name)
     user = token and await get_user_by_token(db, token)
     if not user:
         logger.debug("Invalid token {}", token)
