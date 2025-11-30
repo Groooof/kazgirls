@@ -4,6 +4,7 @@ import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import axios, { AxiosError } from 'axios'
 import Cookies from 'js-cookie'
+import { config } from '@/config'
 
 const router = useRouter()
 const route = useRoute()
@@ -13,7 +14,7 @@ const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref<string | null>(null)
 
-const canSubmit = computed(() =>   username.value.trim().length > 0 &&   password.value.trim().length > 0 &&   !isLoading.value, )
+const canSubmit = computed(() => username.value.trim().length > 0 && password.value.trim().length > 0 && !isLoading.value, )
 
 const login = async () => {
   if (!username.value || !password.value) return
@@ -23,7 +24,7 @@ const login = async () => {
 
   try {
     // логин
-    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
+    const { data } = await axios.post(`${config.url}${config.apiUrl}/tokens/login`, {
       username: username.value,
       password: password.value,
     })
@@ -35,7 +36,7 @@ const login = async () => {
     })
 
     // забираем информацию о себе
-    const { data: me } = await axios.get('http://localhost:8000/api/v1/tokens/me', {
+    const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, {
       withCredentials: true,
     })
 

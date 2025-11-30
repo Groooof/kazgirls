@@ -8,10 +8,6 @@ import Cookies from 'js-cookie'
 
 const token = Cookies.get('access_token')
 
-const isProd = true
-
-console.log(import.meta.env)
-
 const route = useRoute()
 const streamerId = Number(route.params.id)
 
@@ -32,19 +28,11 @@ const isStreaming = ref(false)
 const isSocketConnected = ref(false)
 
 const initSocket = () => {
-  if (isProd) {
-    socket.value = io(`${config.apiUrl}/streamers`, {
-      auth: { token },
-      autoConnect: true,
-      transports: ['websocket'],
-    })
-  } else {
-    socket.value = io('http://localhost:8000/streamers', {
-      auth: { token },
-      autoConnect: true,
-      transports: ['websocket'],
-    })
-  }
+  socket.value = io(`${config.url}/streamers`, {
+    auth: { token },
+    autoConnect: true,
+    transports: ['websocket'],
+  })
 
   socket.value.on('connect', () => {
     isSocketConnected.value = true

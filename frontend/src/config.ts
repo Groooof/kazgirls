@@ -1,7 +1,11 @@
 interface Config {
+  url: string,
   apiUrl: string
 }
 
+const isProd = false
+
 export const config: Config = {
-  apiUrl: import.meta.env.VITE_API_URL || '/api/v1',
+  url: isProd ? '/' : 'http://localhost:8000',
+  apiUrl: '/api/v1',
 }

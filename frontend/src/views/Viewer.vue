@@ -8,8 +8,6 @@ import { useRoute } from 'vue-router'
 
 const token = Cookies.get('access_token')
 
-const isProd = true
-
 const route = useRoute()
 const streamerId = Number(route.params.id)
 
@@ -119,9 +117,7 @@ const handleOffer = async (offer: RTCSessionDescriptionInit) => {
 }
 
 const initSocket = () => {
-  const url = isProd ? `${config.apiUrl}/streamers` : 'http://localhost:8000/streamers'
-
-  socket.value = io(url, {
+  socket.value = io(`${config.url}/streamers`, {
     auth: { token },
     autoConnect: true,
     query: { streamer_id: String(streamerId) },

@@ -5,6 +5,7 @@ import Viewer from '@/views/Viewer.vue'
 import Login from '@/views/Login.vue'
 import Cookies from 'js-cookie'
 import axios from 'axios'
+import { config } from '@/config'
 
 type Me = {
   id: number
@@ -67,7 +68,7 @@ router.beforeEach(async(to, from, next) => {
     })
   }
 
-  const { data: me } = await axios.get('http://localhost:8000/api/v1/tokens/me', { withCredentials: true })
+  const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
 
   if (!me) {
     if (to.name === 'Login') return next()

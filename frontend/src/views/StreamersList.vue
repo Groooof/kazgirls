@@ -2,7 +2,7 @@
 import axios from 'axios'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import Cookies from 'js-cookie'
+import { config } from '@/config'
 
 interface ModelItem {
   id: number
@@ -18,7 +18,6 @@ const models = ref<ModelItem[]>([])
 const search = ref('')
 
 const openModel = (model: ModelItem) => {
-  // роутер у тебя уже есть:
   // { path: '/streamers/:id/view', name: 'Viewer', component: Viewer }
   router.push({
     name: 'Viewer',
@@ -39,7 +38,7 @@ const getStarArray = (rating: number) => {
 }
 
 onMounted(async() => {
-    const { data } = await axios.get('http://localhost:8000/api/v1/lobby/streamers', {
+    const { data } = await axios.get(`${config.url}${config.apiUrl}/lobby/streamers`, {
         withCredentials: true,
     })
 
