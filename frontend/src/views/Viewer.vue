@@ -117,7 +117,7 @@ const handleOffer = async (offer: RTCSessionDescriptionInit) => {
 }
 
 const initSocket = () => {
-  socket.value = io(`${config.url}${config.apiUrl}/streamers`, {
+  socket.value = io(`${config.url}/streamers`, {
     auth: { token },
     autoConnect: true,
     query: { streamer_id: String(streamerId) },
