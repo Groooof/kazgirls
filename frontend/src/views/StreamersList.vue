@@ -61,7 +61,6 @@ onMounted(async() => {
       <main class="models-body">
         <div v-if="!models.length" class="empty-state">
           <p class="empty-title">Никого не найдено</p>
-          <p class="empty-subtitle">Попробуйте изменить запрос поиска.</p>
         </div>
 
         <div v-else class="models-grid">

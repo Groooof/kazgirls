@@ -121,7 +121,7 @@ const initSocket = () => {
     auth: { token },
     autoConnect: true,
     query: { streamer_id: String(streamerId) },
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 500,
