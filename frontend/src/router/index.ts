@@ -52,21 +52,21 @@ const router = createRouter({
 let meCache: Me | null = null
 
 router.beforeEach(async(to, from, next) => {
-  const token = Cookies.get('access_token')
+  // const token = Cookies.get('access_token')
 
-  // 1) Нет токена → только /login
-  if (!token) {
-    meCache = null
+  // // 1) Нет токена → только /login
+  // if (!token) {
+  //   meCache = null
 
-    if (to.name === 'Login') {
-      return next()
-    }
+  //   if (to.name === 'Login') {
+  //     return next()
+  //   }
 
-    return next({
-      name: 'Login',
-      query: { redirect: to.fullPath },
-    })
-  }
+  //   return next({
+  //     name: 'Login',
+  //     query: { redirect: to.fullPath },
+  //   })
+  // }
 
   const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
 
