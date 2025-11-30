@@ -52,33 +52,17 @@ const router = createRouter({
 let meCache: Me | null = null
 
 router.beforeEach(async(to, from, next) => {
-  // const token = Cookies.get('access_token')
-
-  // // 1) Нет токена → только /login
-  // if (!token) {
-  //   meCache = null
-
-  //   if (to.name === 'Login') {
-  //     return next()
-  //   }
-
-  //   return next({
-  //     name: 'Login',
-  //     query: { redirect: to.fullPath },
-  //   })
-  // }
-
-  const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
-
-  if (!me) {
-    if (to.name === 'Login') return next()
-    return next({
-      name: 'Login',
-      query: { redirect: to.fullPath },
-    })
-  }
-
+ // 1) /login всегда доступен, но если уже авторизован — редиректим по роли
   if (to.name === 'Login') {
+    const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
+
+    // не авторизован — показываем логин
+    if (!me) {
+      meCache = null
+      return next()
+    }
+
+    // уже авторизован
     if (me.is_streamer) {
       return next({
         name: 'Streamer',
@@ -87,7 +71,6 @@ router.beforeEach(async(to, from, next) => {
     }
 
     const redirect = to.query.redirect as string | undefined
-
     if (redirect && redirect !== '/login') {
       return next(redirect)
     }
@@ -95,6 +78,18 @@ router.beforeEach(async(to, from, next) => {
     return next({ name: 'StreamersList' })
   }
 
+  // 2) Для всех других страниц: сначала проверяем, авторизован ли юзер
+  const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
+
+  // не авторизован → на логин с redirect
+  if (!me) {
+    return next({
+      name: 'Login',
+      query: { redirect: to.fullPath },
+    })
+  }
+
+  // 3) Если пользователь — стример
   if (me.is_streamer) {
     const isOnOwnStreamRoute =
       to.name === 'Streamer' && String(to.params.id) === String(me.id)
@@ -106,17 +101,15 @@ router.beforeEach(async(to, from, next) => {
       })
     }
 
-    // уже на своей /streamers/:id/stream → всё ок
     return next()
   }
 
-  // 5) Если НЕ стример:
-  //    можно доп. защиту — запретить заходить на /streamers/:id/stream
+  // 4) Если НЕ стример — нельзя на стримерскую панель
   if (!me.is_streamer && to.name === 'Streamer') {
     return next({ name: 'StreamersList' })
   }
 
-  // Остальные страницы (Models/Viewer и т.п.) доступны
+  // 5) Всё остальное зрителям доступно
   return next()
 })
 
