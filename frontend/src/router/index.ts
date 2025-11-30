@@ -3,7 +3,6 @@ import StreamersList from '@/views/StreamersList.vue'
 import Streamer from '@/views/Streamer.vue'
 import Viewer from '@/views/Viewer.vue'
 import Login from '@/views/Login.vue'
-import Cookies from 'js-cookie'
 import axios from 'axios'
 import { config } from '@/config'
 
@@ -50,19 +49,50 @@ const router = createRouter({
 })
 
 let meCache: Me | null = null
+let mePromise: Promise<Me | null> | null = null
 
-router.beforeEach(async(to, from, next) => {
- // 1) /login всегда доступен, но если уже авторизован — редиректим по роли
-  if (to.name === 'Login') {
-    const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
+const getMeSafe = async (): Promise<Me | null> => {
+  // простенький кеш, чтобы не долбить /me на каждый чих
+  if (meCache) return meCache
+  if (mePromise) return mePromise
 
-    // не авторизован — показываем логин
-    if (!me) {
+  mePromise = axios
+    .get<Me>(`${config.url}${config.apiUrl}/tokens/me`, {
+      withCredentials: true,
+    })
+    .then((resp) => {
+      meCache = resp.data
+      return meCache
+    })
+    .catch((err) => {
+      // если 401 — просто считаем, что юзер не залогинен
+      if (err.response?.status === 401) {
+        meCache = null
+        return null
+      }
+
+      console.error('[router] /tokens/me error', err)
       meCache = null
+      return null
+    })
+    .finally(() => {
+      mePromise = null
+    })
+
+  return mePromise
+}
+
+router.beforeEach(async (to, from, next) => {
+  // 1) Если идём на /login
+  if (to.name === 'Login') {
+    const me = await getMeSafe()
+
+    // не залогинен → можно показать логин-страницу
+    if (!me) {
       return next()
     }
 
-    // уже авторизован
+    // уже залогинен
     if (me.is_streamer) {
       return next({
         name: 'Streamer',
@@ -78,10 +108,10 @@ router.beforeEach(async(to, from, next) => {
     return next({ name: 'StreamersList' })
   }
 
-  // 2) Для всех других страниц: сначала проверяем, авторизован ли юзер
-  const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, { withCredentials: true })
+  // 2) Для всех остальных страниц — сначала проверяем, кто мы
+  const me = await getMeSafe()
 
-  // не авторизован → на логин с redirect
+  // не залогинен → отправляем на логин с сохранением урла
   if (!me) {
     return next({
       name: 'Login',
