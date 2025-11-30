@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
-import axios from 'axios'
 import { config } from '@/config'
+import Cookies from 'js-cookie'
+import { useRoute } from 'vue-router'
 
-const isProd = true
-const streamerId = isProd ? 4 : 2
+const token = Cookies.get('access_token')
+const route = useRoute()
+const streamerId = Number(route.params.id)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -17,12 +19,21 @@ const pc = ref<RTCPeerConnection | null>(null)
 
 const remoteStream = ref<MediaStream | null>(null)
 const isSocketConnected = ref(false)
-const hasStream = ref(false) // 👈 есть ли активный стрим
+const hasStream = ref(false)
 
 const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
 const isPip = ref(false)
 
 let isCleaningUp = false
+
+// 👉 для кнопки "Подключиться"
+const pendingOffer = ref<RTCSessionDescriptionInit | null>(null)
+const isConnecting = ref(false)
+const canConnect = computed(
+  () => !!pendingOffer.value && isSocketConnected.value && !isConnecting.value,
+)
+
+const hadStreamEver = ref(false)
 
 const createPeerConnection = () => {
   console.log('[VIEWER] createPeerConnection')
@@ -50,6 +61,7 @@ const createPeerConnection = () => {
     }
     remoteStream.value.addTrack(event.track)
     hasStream.value = true
+    hadStreamEver.value = true
 
     playerRef.value?.play()
   }
@@ -60,6 +72,7 @@ const createPeerConnection = () => {
 
     if (state === 'failed' || state === 'disconnected' || state === 'closed') {
       console.log('[VIEWER] cleaning up after connection state', state)
+
       cleanupConnection()
     }
   }
@@ -90,6 +103,7 @@ const cleanupConnection = () => {
   isCleaningUp = false
 }
 
+// как и было — просто используем из connectToStream/автореконнекта
 const handleOffer = async (offer: RTCSessionDescriptionInit) => {
   console.log('[VIEWER] handleOffer start')
 
@@ -113,11 +127,26 @@ const handleOffer = async (offer: RTCSessionDescriptionInit) => {
   console.log('[VIEWER] answer sent')
 }
 
-const initSocket = (access_token: string) => {
-  const url = isProd ? `${config.apiUrl}/streamers` : 'http://localhost:8000/streamers'
+// 🔘 по кнопке
+const connectToStream = async () => {
+  if (!pendingOffer.value) return
+  if (isConnecting.value) return
 
-  socket.value = io(url, {
-    auth: { token: access_token },
+  isConnecting.value = true
+  try {
+    await handleOffer(pendingOffer.value)
+    // после успешного первого коннекта — дальше будет auto
+    // pendingOffer.value = null // можешь и так, чтобы кнопка пропала сразу
+  } catch (e) {
+    console.error('[VIEWER] connectToStream error', e)
+  } finally {
+    isConnecting.value = false
+  }
+}
+
+const initSocket = () => {
+  socket.value = io(`${config.url}/streamers`, {
+    auth: { token },
     autoConnect: true,
     query: { streamer_id: String(streamerId) },
     transports: ['websocket', 'polling'],
@@ -131,15 +160,25 @@ const initSocket = (access_token: string) => {
     console.log('[VIEWER] socket connected', socket.value?.id)
     isSocketConnected.value = true
 
-    socket.value?.emit('join_stream', {
-      streamerId,
-      role: 'viewer',
-    })
+    // join_stream серверу не нужен — просто оставим если вдруг логируется, но можно убрать
+    // socket.value?.emit('join_stream', { streamerId, role: 'viewer' })
+
+    // 🔥 просим актуальный оффер, если стрим уже идёт
+    socket.value?.emit('webrtc:offer', { streamerId })
+  })
+
+  socket.value.on('reconnect', (n) => {
+    console.log('[VIEWER] reconnect success', n)
+    isSocketConnected.value = true
+
+    // socket.value?.emit('join_stream', { streamerId, role: 'viewer' })
+    socket.value?.emit('webrtc:offer', { streamerId })
   })
 
   socket.value.on('disconnect', (reason) => {
     console.log('[VIEWER] socket disconnected, reason =', reason)
     isSocketConnected.value = false
+
     cleanupConnection()
   })
 
@@ -147,20 +186,50 @@ const initSocket = (access_token: string) => {
     console.error('[VIEWER] connect_error', err?.message || err)
   })
 
-  socket.value.on('reconnect', (n) => {
-    console.log('[VIEWER] reconnect success', n)
-    isSocketConnected.value = true
-    socket.value?.emit('join_stream', {
-      streamerId,
-      role: 'viewer',
-    })
-  })
+  // 🔥 webrtc:offer — два случая:
+  // 1) обычное поведение: сохранили offer, показали кнопку
+  // 2) автореконнект: сразу вызываем handleOffer, без кнопки
+  socket.value.on(
+    'webrtc:offer',
+    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit }) => {
+      console.log('[VIEWER] webrtc:offer received', payload)
+      if (payload.streamerId !== streamerId) return
 
-  socket.value.on('webrtc:offer', async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit }) => {
-    console.log('[VIEWER] webrtc:offer received', payload)
-    if (payload.streamerId !== streamerId) return
-    await handleOffer(payload.sdp)
-  })
+      // Это может быть наш "запрос" без SDP — игнорим
+      if (!payload.sdp) {
+        return
+      }
+
+      const offer = payload.sdp
+
+      // 🔥 Если мы уже когда-то видели стрим на этой вкладке,
+      // считаем, что это переподключение → пробуем подключиться АВТОМАТИЧЕСКИ
+      if (hadStreamEver.value) {
+        console.log('[VIEWER] auto connect on existing tab (hadStreamEver = true)')
+
+        if (isConnecting.value) return
+        isConnecting.value = true
+
+        try {
+          await handleOffer(offer)
+          // успешный автоконнект — кнопку не показываем
+          pendingOffer.value = null
+        } catch (e) {
+          console.error('[VIEWER] auto connect error, falling back to manual button', e)
+          // если вдруг не получилось — даём пользователю кнопку
+          pendingOffer.value = offer
+        } finally {
+          isConnecting.value = false
+        }
+
+        return
+      }
+
+      // 👉 Иначе — первый раз на этой вкладке: работаем как раньше через кнопку
+      pendingOffer.value = offer
+      hasStream.value = false
+    },
+  )
 
   socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
     console.log('[VIEWER] webrtc:ice received', payload)
@@ -176,11 +245,7 @@ const initSocket = (access_token: string) => {
     }
   })
 
-  socket.value.on('stop_stream', (payload: { streamerId: number }) => {
-    console.log('[VIEWER] stop_stream', payload)
-    if (payload.streamerId !== streamerId) return
-    cleanupConnection()
-  })
+  // ⚠️ stop_stream действительно нет — ничего не слушаем
 }
 
 const handleVisibilityChange = async () => {
@@ -190,16 +255,11 @@ const handleVisibilityChange = async () => {
   const video = player.getVideoElement?.()
   if (!video || !remoteStream.value) return
 
-  // На всякий случай — ждём, пока есть данные
   if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     return
   }
 
-  const anyDoc = document as any
-
-  // сворачивание / переход на другую вкладку
   if (document.visibilityState === 'hidden') {
-    // Пытаемся включить PiP через Plyr (enterPip)
     try {
       await player.enterPip?.()
     } catch (e) {
@@ -208,7 +268,6 @@ const handleVisibilityChange = async () => {
     return
   }
 
-  // возврат на вкладку — выходим из PiP
   if (document.visibilityState === 'visible') {
     try {
       await player.exitPip?.()
@@ -219,20 +278,7 @@ const handleVisibilityChange = async () => {
 }
 
 onMounted(async () => {
-  if (isProd) {
-    const { data } = await axios.post('/api/v1/tokens/login', {
-      username: 'viewer_2',
-      password: 'test',
-    })
-    initSocket(data.access_token)
-  } else {
-    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-      username: 'girl',
-      password: 'test',
-    })
-    initSocket(data.access_token)
-  }
-
+  initSocket()
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
@@ -255,7 +301,9 @@ onBeforeUnmount(() => {
                 ? 'Подключаемся к серверу...'
                 : hasStream
                   ? 'Стрим в эфире'
-                  : 'Ждём, когда стример запустит стрим'
+                  : pendingOffer
+                    ? 'Стрим доступен — нажмите «Подключиться»'
+                    : 'Ждём, когда стример запустит стрим'
             }}
           </p>
         </div>
@@ -277,9 +325,25 @@ onBeforeUnmount(() => {
 
           <div v-if="!hasStream" class="video-overlay">
             <div class="spinner"></div>
+
             <p class="video-overlay-text">
-              Ждём, когда стример запустит стрим...
+              <span v-if="!pendingOffer">
+                Ждём, когда стример запустит стрим...
+              </span>
+              <span v-else>
+                Стрим доступен — нажмите «Подключиться»
+              </span>
             </p>
+
+            <button
+              v-if="pendingOffer"
+              class="connect-btn"
+              :disabled="!canConnect"
+              @click="connectToStream"
+            >
+              <span v-if="isConnecting">Подключаемся...</span>
+              <span v-else>Подключиться к стриму</span>
+            </button>
           </div>
         </div>
       </div>
@@ -362,6 +426,36 @@ onBeforeUnmount(() => {
 
 .status-dot--bad {
   background: #ef4444;
+}
+
+.connect-btn {
+  margin-top: 8px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #22c55e, #0ea5e9);
+  color: #f9fafb;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 10px 24px rgba(34, 197, 94, 0.45);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.1s ease;
+}
+
+.connect-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+
+.connect-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px rgba(34, 197, 94, 0.7);
 }
 
 .viewer-body {

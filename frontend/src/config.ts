@@ -1,9 +1,11 @@
 interface Config {
+  url: string,
   apiUrl: string
-  sentryDsn?: string
 }
 
+const isProd = true
+
 export const config: Config = {
-  apiUrl: import.meta.env.VITE_API_URL || '/api/v1',
-  sentryDsn: import.meta.env.VITE_SENTRY_DSN || undefined,
+  url: isProd ? '' : 'http://localhost:8000',
+  apiUrl: '/api/v1',
 }

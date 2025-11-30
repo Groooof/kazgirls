@@ -3,13 +3,13 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
-import axios from 'axios'
 import { config } from '@/config'
+import Cookies from 'js-cookie'
 
-const isProd = true
+const token = Cookies.get('access_token')
 
 const route = useRoute()
-const streamerId = isProd ? 4 : 2
+const streamerId = Number(route.params.id)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -27,25 +27,16 @@ const remoteStream = ref<MediaStream | null>(null)
 const isStreaming = ref(false)
 const isSocketConnected = ref(false)
 
-const initSocket = (access_token: string) => {
-  if (isProd) {
-    socket.value = io(`${config.apiUrl}/streamers`, {
-      auth: { token: access_token },
-      autoConnect: true,
-      transports: ['websocket'],
-    })
-  } else {
-    socket.value = io('http://localhost:8000/streamers', {
-      auth: { token: access_token },
-      autoConnect: true,
-      transports: ['websocket'],
-    })
-  }
+const initSocket = () => {
+  socket.value = io(`${config.url}/streamers`, {
+    auth: { token },
+    autoConnect: true,
+    transports: ['websocket'],
+  })
 
   socket.value.on('connect', () => {
     isSocketConnected.value = true
 
-    // заходим в "комнату" стримера
     socket.value?.emit('join_stream', {
       streamerId,
       role: 'streamer',
@@ -74,6 +65,40 @@ const initSocket = (access_token: string) => {
       console.error('Error adding ICE candidate', e)
     }
   })
+
+  // 🔥 ВАЖНО: отличаем запрос (без sdp) от обычного оффера (со sdp)
+  socket.value.on(
+    'webrtc:offer',
+    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit }) => {
+      console.log('[STREAMER] webrtc:offer received', payload)
+
+      if (payload.streamerId !== streamerId) return
+
+      // если есть sdp — это либо наш же broadcast, либо вообще не "запрос" от viewer → игнорим
+      if (payload.sdp) {
+        return
+      }
+
+      if (!pc.value) {
+        console.warn('[STREAMER] got offer-request but no pc (stream not started)')
+        return
+      }
+
+      try {
+        // создаём новый оффер с перезапуском ICE для нового зрителя
+        const newOffer = await pc.value.createOffer({ iceRestart: true } as RTCOfferOptions)
+        await pc.value.setLocalDescription(newOffer)
+
+        socket.value?.emit('webrtc:offer', {
+          streamerId,
+          sdp: newOffer,
+        })
+        console.log('[STREAMER] sent refreshed offer to viewer')
+      } catch (e) {
+        console.error('[STREAMER] error handling offer-request', e)
+      }
+    },
+  )
 }
 
 const getLocalMedia = async () => {
@@ -172,21 +197,7 @@ const stopStream = () => {
 }
 
 onMounted(async () => {
-  if (isProd) {
-    const { data } = await axios.post('/api/v1/tokens/login', {
-      username: "streamer_2",
-      password: "test",
-    })
-
-    initSocket(data.access_token)
-  } else {
-    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-      username: "stream",
-      password: "test",
-    })
-
-    initSocket(data.access_token)
-  }
+  initSocket()
 
   await getLocalMedia()
 })
