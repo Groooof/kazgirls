@@ -321,13 +321,13 @@ def get_socketio_query_param(environ, name) -> str | None:
 def generate_error_responses(cls_name, *errors) -> dict:
     grouped_errors = defaultdict(list)
     for err_cls in errors:
-        grouped_errors[err_cls.status].append(err_cls)
+        grouped_errors[err_cls.status_code].append(err_cls)
 
     responses = {}
-    for status, error_classes in grouped_errors.items():
+    for status_code, error_classes in grouped_errors.items():
         error_codes = (e.error_code for e in error_classes)
         ErrorCodeLiteral = Literal[*error_codes]
-        model_name = f"{cls_name}{status}"
+        model_name = f"{cls_name}{status_code}"
         dynamic_model = create_model(model_name, error_code=ErrorCodeLiteral, error=str)
 
         examples = {}
@@ -340,9 +340,9 @@ def generate_error_responses(cls_name, *errors) -> dict:
                 },
             }
 
-        responses[status] = {
+        responses[status_code] = {
             "model": dynamic_model,
-            "description": f"Возможные ошибки для статуса {status}",
+            "description": f"Возможные ошибки для статуса {status_code}",
             "content": {"application/json": {"examples": examples}},
         }
 

@@ -30,8 +30,7 @@ services:
     env_file:
       - kazgirls-api-docker.env
     volumes:
-      - /var/lib/kazgirls/kazgirls-storage-data:/var/lib/kazgirls/storage
-      - /var/log/kazgirls/app-logs:/var/log/kazgirls/
+      - /srv/kazgirls/storage:/srv/kazgirls/storage
     logging:
       driver: local
       options:

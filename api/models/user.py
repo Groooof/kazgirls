@@ -9,6 +9,7 @@ from models.bases import BaseIdMixin, BaseSQLAlchemyModel, DateFieldsMixin
 
 if TYPE_CHECKING:
     from models.streamers import StreamerProfile
+    from models.viewers import ViewerProfile
 
 
 class User(BaseIdMixin[Integer], DateFieldsMixin, BaseSQLAlchemyModel):
@@ -17,13 +18,13 @@ class User(BaseIdMixin[Integer], DateFieldsMixin, BaseSQLAlchemyModel):
 
     username: Mapped[str]
     password: Mapped[str]
-    name: Mapped[str | None]
     is_active: Mapped[bool] = mapped_column(default=True)
     is_streamer: Mapped[bool] = mapped_column(default=False)
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
     streamer_profile: Mapped["StreamerProfile"] = relationship(back_populates="user", uselist=False)
+    viewer_profile: Mapped["ViewerProfile"] = relationship(back_populates="user", uselist=False)
 
     def __str__(self) -> str:
         return self.username

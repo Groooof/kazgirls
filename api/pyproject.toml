@@ -41,6 +41,7 @@ dependencies = [
     "python-socketio[asyncio-client]>=5.14.1",
     "furl>=2.1.4",
     "fastapi-storages==0.3.0",
+    "pillow==12.0.0",
 ]
 
 [dependency-groups]

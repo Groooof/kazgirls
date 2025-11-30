@@ -2,9 +2,15 @@ from datetime import datetime, timedelta
 
 from freezegun import freeze_time
 
-from logic.lobby import get_free_online_streamers, get_free_online_streamers_ids
-from logic.streamers import clean_offline_viewers, connect_streamer, connect_viewer, ping_streamer
-from schemas.lobby import StreamerSchema
+from logic.streamers import (
+    clean_offline_viewers,
+    connect_streamer,
+    connect_viewer,
+    get_free_online_streamers,
+    get_free_online_streamers_ids,
+    ping_streamer,
+)
+from schemas.streamers import StreamerSchema
 from tests.custom_faker import fake_sid
 
 
@@ -12,7 +18,7 @@ async def test_get_free_online_streamers_ids(redis, sio):
     streamers_ids = await get_free_online_streamers_ids(redis)
     assert set(streamers_ids) == set()
 
-    await connect_streamer(redis, 5, fake_sid())
+    await connect_streamer(sio, redis, 5, fake_sid())
     streamers_ids = await get_free_online_streamers_ids(redis)
     assert set(streamers_ids) == {5}
 
@@ -20,7 +26,7 @@ async def test_get_free_online_streamers_ids(redis, sio):
     streamers_ids = await get_free_online_streamers_ids(redis)
     assert set(streamers_ids) == set()
 
-    await connect_streamer(redis, 6, fake_sid())
+    await connect_streamer(sio, redis, 6, fake_sid())
     streamers_ids = await get_free_online_streamers_ids(redis)
     assert set(streamers_ids) == {6}
 
@@ -33,13 +39,13 @@ async def test_get_free_online_streamers_ids(redis, sio):
     assert set(streamers_ids) == {5, 6}
 
 
-async def test_get_free_online_streamers(db, redis):
-    await connect_streamer(redis, 5, fake_sid())
-    await connect_streamer(redis, 6, fake_sid())
+async def test_get_free_online_streamers(sio, db, redis):
+    await connect_streamer(sio, redis, 1, fake_sid())
+    await connect_streamer(sio, redis, 2, fake_sid())
 
     expected_streamers = [
-        StreamerSchema(id=5, name="Streamer 1", rating=4.55),
-        StreamerSchema(id=6, name="Streamer 2"),
+        StreamerSchema(id=1, name="Streamer 1", rating=4.55),
+        StreamerSchema(id=2, name="Streamer 2", rating=3.3),
     ]
     streamers = await get_free_online_streamers(db, redis)
     assert streamers == expected_streamers

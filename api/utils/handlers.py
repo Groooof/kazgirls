@@ -1,9 +1,8 @@
 from fastapi.responses import ORJSONResponse
-from loguru import logger
 from pydantic import ValidationError
 from starlette.requests import Request
 
-from exceptions.bases import BaseHttpError
+from exceptions.bases import BaseHttpError, Http422, Http500
 
 
 async def logic_exception_handler(request: Request, exc: BaseHttpError) -> ORJSONResponse:
@@ -14,15 +13,8 @@ async def logic_exception_handler(request: Request, exc: BaseHttpError) -> ORJSO
 
 
 async def any_exception_handler(request: Request, exc: Exception) -> ORJSONResponse:
-    return ORJSONResponse(
-        status_code=500,
-        content={"error": "Неизвестная ошибка", "error_code": "INTERNAL_ERROR"},
-    )
+    return await logic_exception_handler(request, Http500())
 
 
 async def unhandled_validation_exception_handler(request: Request, exc: ValidationError) -> ORJSONResponse:
-    logger.warning(100 * "A")
-    return ORJSONResponse(
-        status_code=422,
-        content={"error": "Ошибка валидации", "error_code": "VALIDATION_ERROR"},
-    )
+    return await logic_exception_handler(request, Http422())

@@ -1,7 +1,7 @@
 import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import contains_eager
+from sqlalchemy.orm import contains_eager, joinedload
 
 from models import User, UserSession
 from repository.user import UserSessionRepository
@@ -29,6 +29,10 @@ class UserSessionService(BaseServiceAbstract):
             (UserSession.expired >= utc_now()),
             User.is_active,
             join=(User,),
-            options=(contains_eager(UserSession.user),),
+            options=(
+                contains_eager(UserSession.user),
+                joinedload(UserSession.user, User.streamer_profile),
+                joinedload(UserSession.user, User.viewer_profile),
+            ),
         )
         return session and session.user or None

@@ -33,6 +33,7 @@ def register_handlers(sio: socketio.AsyncServer) -> None:
 
     register(streamers.connect)
     register(streamers.disconnect)
+    register(streamers.message)
     register(streamers.ping)
     register(streamers.webrtc_offer, "webrtc:offer")
     register(streamers.webrtc_answer, "webrtc:answer")
