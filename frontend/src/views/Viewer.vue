@@ -2,11 +2,16 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
-import axios from 'axios'
 import { config } from '@/config'
+import Cookies from 'js-cookie'
+import { useRoute } from 'vue-router'
+
+const token = Cookies.get('access_token')
 
 const isProd = true
-const streamerId = isProd ? 4 : 2
+
+const route = useRoute()
+const streamerId = Number(route.params.id)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -113,11 +118,11 @@ const handleOffer = async (offer: RTCSessionDescriptionInit) => {
   console.log('[VIEWER] answer sent')
 }
 
-const initSocket = (access_token: string) => {
+const initSocket = () => {
   const url = isProd ? `${config.apiUrl}/streamers` : 'http://localhost:8000/streamers'
 
   socket.value = io(url, {
-    auth: { token: access_token },
+    auth: { token },
     autoConnect: true,
     query: { streamer_id: String(streamerId) },
     transports: ['websocket', 'polling'],
@@ -219,19 +224,7 @@ const handleVisibilityChange = async () => {
 }
 
 onMounted(async () => {
-  if (isProd) {
-    const { data } = await axios.post('/api/v1/tokens/login', {
-      username: 'viewer_2',
-      password: 'test',
-    })
-    initSocket(data.access_token)
-  } else {
-    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-      username: 'girl',
-      password: 'test',
-    })
-    initSocket(data.access_token)
-  }
+  initSocket()
 
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })

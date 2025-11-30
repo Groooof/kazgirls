@@ -3,13 +3,17 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
-import axios from 'axios'
 import { config } from '@/config'
+import Cookies from 'js-cookie'
+
+const token = Cookies.get('access_token')
 
 const isProd = true
 
+console.log(import.meta.env)
+
 const route = useRoute()
-const streamerId = isProd ? 4 : 2
+const streamerId = Number(route.params.id)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -27,16 +31,16 @@ const remoteStream = ref<MediaStream | null>(null)
 const isStreaming = ref(false)
 const isSocketConnected = ref(false)
 
-const initSocket = (access_token: string) => {
+const initSocket = () => {
   if (isProd) {
     socket.value = io(`${config.apiUrl}/streamers`, {
-      auth: { token: access_token },
+      auth: { token },
       autoConnect: true,
       transports: ['websocket'],
     })
   } else {
     socket.value = io('http://localhost:8000/streamers', {
-      auth: { token: access_token },
+      auth: { token },
       autoConnect: true,
       transports: ['websocket'],
     })
@@ -172,21 +176,7 @@ const stopStream = () => {
 }
 
 onMounted(async () => {
-  if (isProd) {
-    const { data } = await axios.post('/api/v1/tokens/login', {
-      username: "streamer_2",
-      password: "test",
-    })
-
-    initSocket(data.access_token)
-  } else {
-    const { data } = await axios.post('http://localhost:8000/api/v1/tokens/login', {
-      username: "stream",
-      password: "test",
-    })
-
-    initSocket(data.access_token)
-  }
+  initSocket()
 
   await getLocalMedia()
 })

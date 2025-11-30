@@ -79,17 +79,6 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  initPlayer()
-})
-
-onBeforeUnmount(() => {
-  if (videoPlayerInstance.value) {
-    videoPlayerInstance.value.destroy()
-    videoPlayerInstance.value = null
-  }
-})
-
 // 👉 Экспортируем и video, и plyr-инстанс наружу
 const enterPip = async () => {
   const inst: any = videoPlayerInstance.value
@@ -139,6 +128,17 @@ const play = async () => {
     console.error('[Video] play() FAILED', e)
   }
 }
+
+onMounted(() => {
+  initPlayer()
+})
+
+onBeforeUnmount(() => {
+  if (videoPlayerInstance.value) {
+    videoPlayerInstance.value.destroy()
+    videoPlayerInstance.value = null
+  }
+})
 
 defineExpose({
   getVideoElement: () => videoPlayerRef.value,
