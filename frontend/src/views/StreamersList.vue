@@ -37,13 +37,21 @@ const getStarArray = (rating: number) => {
   return stars
 }
 
-onMounted(async() => {
-    const { data } = await axios.get(`${config.url}${config.apiUrl}/lobby/streamers`, {
+const getStreamers = async() => {
+    const { data } = await axios.get(`${config.url}${config.apiUrl}/streamers`, {
         withCredentials: true,
     })
 
     models.value = data
+}
+
+onMounted(() => {
+    getStreamers()
 })
+
+setInterval(() => {
+    getStreamers()
+}, 5000);
 </script>
 
 <template>
