@@ -28,7 +28,7 @@ const isStreaming = ref(false)
 const isSocketConnected = ref(false)
 
 const initSocket = () => {
-  socket.value = io(`${config.url}/streamers`, {
+  socket.value = io(`${config.url}${config.apiUrl}/streamers`, {
     auth: { token },
     autoConnect: true,
     transports: ['websocket'],
