@@ -37,7 +37,6 @@ const initSocket = () => {
   socket.value.on('connect', () => {
     isSocketConnected.value = true
 
-    // заходим в "комнату" стримера
     socket.value?.emit('join_stream', {
       streamerId,
       role: 'streamer',
@@ -66,6 +65,40 @@ const initSocket = () => {
       console.error('Error adding ICE candidate', e)
     }
   })
+
+  // 🔥 ВАЖНО: отличаем запрос (без sdp) от обычного оффера (со sdp)
+  socket.value.on(
+    'webrtc:offer',
+    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit }) => {
+      console.log('[STREAMER] webrtc:offer received', payload)
+
+      if (payload.streamerId !== streamerId) return
+
+      // если есть sdp — это либо наш же broadcast, либо вообще не "запрос" от viewer → игнорим
+      if (payload.sdp) {
+        return
+      }
+
+      if (!pc.value) {
+        console.warn('[STREAMER] got offer-request but no pc (stream not started)')
+        return
+      }
+
+      try {
+        // создаём новый оффер с перезапуском ICE для нового зрителя
+        const newOffer = await pc.value.createOffer({ iceRestart: true } as RTCOfferOptions)
+        await pc.value.setLocalDescription(newOffer)
+
+        socket.value?.emit('webrtc:offer', {
+          streamerId,
+          sdp: newOffer,
+        })
+        console.log('[STREAMER] sent refreshed offer to viewer')
+      } catch (e) {
+        console.error('[STREAMER] error handling offer-request', e)
+      }
+    },
+  )
 }
 
 const getLocalMedia = async () => {
