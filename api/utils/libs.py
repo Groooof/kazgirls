@@ -4,6 +4,7 @@ import signal
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from http.cookies import SimpleCookie
 from typing import Concatenate, Literal, Optional, overload
 from urllib.parse import parse_qs
 
@@ -316,6 +317,14 @@ def get_socketio_query_param(environ, name) -> str | None:
     params = parse_qs(query)
     param_list = params.get(name)
     return param_list and param_list[0] or None
+
+
+def get_socketio_cookie(environ, name: str):
+    raw = environ.get("HTTP_COOKIE", "")
+    jar = SimpleCookie()
+    jar.load(raw)
+    morsel = jar.get(name)
+    return morsel.value if morsel else None
 
 
 def generate_error_responses(cls_name, *errors) -> dict:

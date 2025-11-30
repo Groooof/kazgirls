@@ -16,8 +16,8 @@ from logic.streamers import (
     ping_streamer,
     ping_viewer,
 )
-from settings.conf import sockets_namespaces
-from utils.libs import get_socketio_query_param as get_query_param
+from settings.conf import other_settings, sockets_namespaces
+from utils.libs import get_socketio_cookie as get_cookie, get_socketio_query_param as get_query_param
 
 namespace = sockets_namespaces.streamers
 
@@ -25,7 +25,7 @@ namespace = sockets_namespaces.streamers
 @with_db()
 @with_redis()
 async def connect(sid, environ, auth, db: AsyncSession, redis: Redis, sio: socketio.AsyncServer):
-    token = auth.get("token")
+    token = get_cookie(other_settings.access_token_cookie_name)
     user = token and await get_user_by_token(db, token)
     if not user:
         logger.debug("Invalid token {}", token)
