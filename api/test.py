@@ -34,10 +34,10 @@ from socketio.exceptions import ConnectionError
 
 
 async def main():
-    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiaWF0IjoxNzYxNTA1NjUzLCJleHAiOjE3NjQwOTc2NTN9.RmvpIYfrEFUJPP_w9z0qPQjFrTcPXS0r0yuQXuhuFz4"
+    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiaWF0IjoxNzYyNzExNjg4LCJleHAiOjE3NjUzMDM2ODh9._oX0nQazoczBHDvIGvH06UpfSlYH4o653GZROAfSMcg"
     try:
         await sio.connect(
-            "http://localhost:8000/?streamer_id=qwerty123",
+            "http://localhost:8000/",
             namespaces=["/streamers"],
             auth={"token": token},
             transports=["websocket"],
@@ -47,23 +47,11 @@ async def main():
         return
 
     print("👂 Listening for messages...")
+    await sio.emit("message", {"text": "hello!!!"}, namespace="/streamers")
+
     await asyncio.sleep(999999)  # слушаем бесконечно
     await sio.disconnect()
 
 
-from redis.asyncio import Redis
-
-from dependencies.redis import with_redis
-from utils.libs import utc_now
-
-
-@with_redis()
-async def main2(redis: Redis):
-    now_ts = int(utc_now().timestamp())
-    await redis.zadd("test:1", {1: now_ts})
-    await redis.zadd("test:1", {2: now_ts})
-    await redis.zadd("test:1", {3: now_ts})
-
-    now_ts = int(utc_now().timestamp())
-    viewers_count = await redis.zrange("test:1", 0, now_ts)
-    print(viewers_count)
+loop = asyncio.get_event_loop()
+loop.run_until_complete(main())

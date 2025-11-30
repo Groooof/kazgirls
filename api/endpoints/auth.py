@@ -1,23 +1,25 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from loguru import logger
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from dependencies import get_db
 from dependencies.auth import get_access_token, get_current_active_user
+from exceptions.auth import WrongCredentials
+from exceptions.bases import Http422
 from logic.auth import login_user_by_password, logout_user
 from models import User
 from schemas.auth import LoginRequestSchema, LoginResponseSchema
 from schemas.user import UserSchema
 from settings import conf
+from utils.libs import generate_error_responses
 
-from ._responses import responses
 from ._tags import Tags
 
-router = APIRouter(tags=[Tags.auth_private], responses=responses(status.HTTP_401_UNAUTHORIZED))
+router = APIRouter(tags=[Tags.auth_private])
 
 
-@router.post("/login", summary="Аутентификация")
+@router.post("/login", summary="Аутентификация", responses=generate_error_responses("LoginEndpointErrors", Http422))
 async def login_endpoint(
     data: LoginRequestSchema,
     response: Response,
@@ -51,7 +53,11 @@ async def logout_endpoint(
     )
 
 
-@router.get("/me", summary="Получить информацию о текущем пользователе")
+@router.get(
+    "/me",
+    summary="Получить информацию о текущем пользователе",
+    responses=generate_error_responses("LoginEndpointErrors", WrongCredentials),
+)
 async def get_me_endpoint(
     user: User = Depends(get_current_active_user),
 ) -> UserSchema:

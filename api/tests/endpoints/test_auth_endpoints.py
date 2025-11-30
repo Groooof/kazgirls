@@ -32,7 +32,6 @@ async def test_user(client: AsyncClient):
     headers = {"Authorization": ""}
     response = await client.get("/tokens/me", headers=headers)
     assert response.status_code == status.HTTP_401_UNAUTHORIZED, response.text
-    assert response.json()["message"] == "No access token"
 
     # токен для апи не создавали
     headers = {"Authorization": f"Bearer {token}"}

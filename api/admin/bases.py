@@ -15,7 +15,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Mapper, selectinload
 from starlette.responses import RedirectResponse, Response
 
 from dependencies.db import EngineTypeEnum, _get_db, engines
-from exceptions.auth import CredentialsException
+from exceptions.auth import WrongCredentials
 from logic.auth import get_user_by_token, login_user_by_password, logout_user
 from settings.conf import other_settings, settings
 
@@ -44,7 +44,7 @@ class AdminBackend(AuthenticationBackend):
                 token = await login_user_by_password(db, username, password)
                 request.session.update({"token": token})
                 return True
-        except CredentialsException:
+        except WrongCredentials:
             return False
 
     async def logout(self, request: Request) -> bool:
@@ -75,9 +75,10 @@ class BaseModelView(ModelView):
     pagination_enable = True
 
     column_type_formatters = BASE_FORMATTERS | {
+        float: lambda v: v and round(v, 2),
         datetime: lambda v: v
         and v.astimezone(pytz.timezone(other_settings.default_timezone)).strftime(other_settings.default_dt_format)
-        or ""
+        or "",
     }
 
     @no_type_check

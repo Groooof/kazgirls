@@ -13,12 +13,9 @@ from fastapi import FastAPI as _FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
-from pydantic import ValidationError
 from redis.asyncio import ConnectionPool
-from scalar_fastapi import get_scalar_api_reference
 from sqladmin import Admin, BaseView
 from sqladmin.authentication import AuthenticationBackend
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
@@ -26,11 +23,12 @@ from admin.bases import CustomAdmin, authentication_backend
 from app_logging import init_sentry, set_logging_config
 from dependencies.db import EngineTypeEnum, _get_db, engines
 from endpoints import router
-from exceptions.bases import LogicException
+from exceptions.bases import BaseHttpError, Http500
 from settings.conf import databases, settings
 from sockets import *  # noqa: F403
 from sockets import register_handlers
 from utils.handlers import any_exception_handler, logic_exception_handler, unhandled_validation_exception_handler
+from utils.libs import generate_error_responses
 from utils.middleware import TracemallocMiddleware
 
 origins = ["https://nex2ilo.com"]
@@ -131,10 +129,12 @@ def init_app():
         debug=settings.debug,
         openapi_url="/openapi.json",
         lifespan=lifespan,
-        docs_url=None,
+        docs_url="/docs",
         redoc_url=None,
+        responses=generate_error_responses("CommonError", Http500),
     )
     app.mount("/static", StaticFiles(directory=settings.project_root / "statics", check_dir=False), name="static")
+    app.mount("/media", StaticFiles(directory=settings.local_storage_path, check_dir=False), name="media")
 
     allow_origins = origins if not settings.is_local else ["*"]
     app.add_middleware(
@@ -148,24 +148,16 @@ def init_app():
         app.add_middleware(TracemallocMiddleware)
 
     # Переопределим ошибки, которые будем райзить прямо в фукнции
-    app.add_exception_handler(LogicException, logic_exception_handler)
+    app.add_exception_handler(BaseHttpError, logic_exception_handler)
 
     # ValidationError, который может не отловиться FastAPI
-    app.add_exception_handler(ValidationError, unhandled_validation_exception_handler)
+    # app.add_exception_handler(ValidationError, unhandled_validation_exception_handler)
     # Все остальные системные ошибки, для однобразия ответов
     app.add_exception_handler(RequestValidationError, unhandled_validation_exception_handler)
-    app.add_exception_handler(StarletteHTTPException, any_exception_handler)
+    # app.add_exception_handler(StarletteHTTPException, any_exception_handler)
+    app.add_exception_handler(Exception, any_exception_handler)
 
     app.include_router(router, prefix=settings.api_v1_str)
-
-    @app.get("/docs", include_in_schema=False)
-    async def scalar_docs():
-        return get_scalar_api_reference(
-            openapi_url=app.openapi_url,
-            title=app.title,
-            dark_mode=False,
-            hide_client_button=True,
-        )
 
     return app
 

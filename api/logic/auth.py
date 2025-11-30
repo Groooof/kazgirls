@@ -1,7 +1,7 @@
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions.auth import CredentialsException
+from exceptions.auth import WrongCredentials
 from models.user import User
 from services.auth import UserSessionService
 from services.jwt import JwtTokenService
@@ -17,11 +17,11 @@ async def login_user_by_password(db: AsyncSession, username: str, password: str)
 
     user = await user_service.get_user_by_username(username)
     if not user:
-        raise CredentialsException(message="User not found")
+        raise WrongCredentials
 
     logger.debug("User: id:{} username:{} password:{}", user.id, user.username, user.password)
     if user.username != username or not verify_password(password, user.password):
-        raise CredentialsException(message="Invalid username or password")
+        raise WrongCredentials
 
     token = jwt_service.create_token(user.id, conf.other_settings.users_session_ttl, conf.other_settings.jwt_secret)
     await session_service.create_session(user.id, token, conf.other_settings.users_session_ttl)

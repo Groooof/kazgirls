@@ -1,64 +1,31 @@
-import dataclasses
-from http import HTTPStatus as status
-
-type HTTPStatus = int
+from typing import ClassVar
 
 
-@dataclasses.dataclass
-class DetailsStruct:
-    human_message: str | None = None
-    system_message: str | None = None
+class BaseHttpError(Exception):
+    status_code: ClassVar[int]
+    error_code: ClassVar[str]
+    error: ClassVar[str]
 
 
-class BaseLogicException(Exception):
-    details = None
-    http_status: HTTPStatus
-
-    def __init__(
-        self,
-        message: str,
-        http_status: HTTPStatus = status.BAD_REQUEST,
-        details: DetailsStruct | None = None,
-    ):
-        self.http_status = http_status
-        self.message = message
-
-        if details:
-            self.details = dataclasses.asdict(details)
-
-    def __str__(self):
-        cause = self.__cause__ and self.__cause__.__class__ or ""
-        return f"{self.message} {cause}"
+class Http403(BaseHttpError):
+    status_code = 403
+    error_code = "FORBIDDEN"
+    error = "Доступ запрещен"
 
 
-class LogicException(BaseLogicException):
-    """
-    Исключение, которое можно показывать пользователю
-    """
-
-    documentation_url: str | None = None
-
-    def __init__(
-        self,
-        message: str,
-        http_status: HTTPStatus = status.BAD_REQUEST,
-        details: DetailsStruct | None = None,
-        documentation_url: str | None = None,
-    ):
-        super().__init__(message=message, http_status=http_status, details=details)
-        if documentation_url:
-            self.documentation_url = documentation_url
+class Http404(BaseHttpError):
+    status_code = 404
+    error_code = "NOT_FOUND"
+    error = "Объект не найден"
 
 
-class PrivateLogicException(BaseLogicException):
-    """
-    Исключение, которое скрывает message и details от пользователя информацию показывать пользователю
-    """
+class Http422(BaseHttpError):
+    status_code = 422
+    error_code = "VALIDATION_ERROR"
+    error = "Неверный формат запроса"
 
-    def __init__(
-        self,
-        message: str,
-        http_status: HTTPStatus = status.BAD_REQUEST,
-        details: DetailsStruct | None = None,
-    ):
-        super().__init__(message=message, http_status=http_status, details=details)
+
+class Http500(BaseHttpError):
+    status_code = 500
+    error_code = "INTERNAL_ERROR"
+    error = "Неизвестная ошибка"

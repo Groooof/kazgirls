@@ -1,7 +1,12 @@
 from fastapi import Request
 
 from admin.bases import BaseModelView
+from dependencies.db import _get_db
+from models.streamers import StreamerProfile
 from models.user import User
+from models.viewers import ViewerProfile
+from repository.streamers import StreamerProfileRepository
+from repository.viewers import ViewerProfileRepository
 from utils.auth import get_password_hash
 
 
@@ -15,13 +20,11 @@ class UserAdmin(BaseModelView, model=User):
     form_create_rules = [
         User.username.key,
         User.password.key,
-        User.name.key,
         User.is_streamer.key,
         User.is_superuser.key,
     ]
     form_edit_rules = [
         User.username.key,
-        User.name.key,
         User.is_streamer.key,
         User.is_superuser.key,
         User.is_active.key,
@@ -32,3 +35,17 @@ class UserAdmin(BaseModelView, model=User):
             data["password"] = get_password_hash(data["password"])
 
         await super().on_model_change(data, model, is_created, request)
+
+    async def after_model_change(self, data: dict, model: User, is_created: bool, request: Request) -> None:
+        async with _get_db() as db:
+            repo = ViewerProfileRepository(db)
+            is_exists = await repo.exists(ViewerProfile.user_id == model.id)
+            if not is_exists:
+                await repo.save(ViewerProfile(user_id=model.id))
+
+            repo = StreamerProfileRepository(db)
+            is_exists = await repo.exists(StreamerProfile.user_id == model.id)
+            if not is_exists:
+                await repo.save(StreamerProfile(user_id=model.id))
+
+        await super().after_model_change(data, model, is_created, request)

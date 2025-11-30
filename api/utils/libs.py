@@ -1,9 +1,10 @@
 import asyncio
 import inspect
 import signal
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import Concatenate, Optional, overload
+from typing import Concatenate, Literal, Optional, overload
 from urllib.parse import parse_qs
 
 import orjson
@@ -315,3 +316,34 @@ def get_socketio_query_param(environ, name) -> str | None:
     params = parse_qs(query)
     param_list = params.get(name)
     return param_list and param_list[0] or None
+
+
+def generate_error_responses(cls_name, *errors) -> dict:
+    grouped_errors = defaultdict(list)
+    for err_cls in errors:
+        grouped_errors[err_cls.status_code].append(err_cls)
+
+    responses = {}
+    for status_code, error_classes in grouped_errors.items():
+        error_codes = (e.error_code for e in error_classes)
+        ErrorCodeLiteral = Literal[*error_codes]
+        model_name = f"{cls_name}{status_code}"
+        dynamic_model = create_model(model_name, error_code=ErrorCodeLiteral, error=str)
+
+        examples = {}
+        for err_cls in error_classes:
+            examples[err_cls.error_code] = {
+                "summary": err_cls.error,
+                "value": {
+                    "error_code": err_cls.error_code,
+                    "error": err_cls.error,
+                },
+            }
+
+        responses[status_code] = {
+            "model": dynamic_model,
+            "description": f"Возможные ошибки для статуса {status_code}",
+            "content": {"application/json": {"examples": examples}},
+        }
+
+    return responses

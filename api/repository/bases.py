@@ -10,7 +10,6 @@ from sqlalchemy.engine.result import ScalarResult
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import joinedload, load_only
 
-from exceptions.db import DoesNotExist, MultipleObjectsReturned
 from models.bases import BaseSQLAlchemyModel
 
 from .dto import UNSET, UnsetType
@@ -280,10 +279,7 @@ class BaseSQLRepository[T: BaseSQLAlchemyModel](BaseRepositoryAbstract):
             return result.one()
         except sqlalchemy.exc.NoResultFound:
             if raise_exception_if_none:
-                raise DoesNotExist(self.model)
-        except sqlalchemy.exc.MultipleResultsFound:
-            raise MultipleObjectsReturned(self.model)
-
+                raise
         return None
 
     def _base_order_by_query_builder(
@@ -447,10 +443,7 @@ class BaseSQLRepository[T: BaseSQLAlchemyModel](BaseRepositoryAbstract):
 
     async def update_or_create(self, defaults: dict | None = None, commit: bool = True, **kwargs):
         get_query = self._select_query_builder(**kwargs).with_for_update()
-        try:
-            result = (await self._exec_scalar(get_query)).one_or_none()
-        except sqlalchemy.exc.MultipleResultsFound:
-            raise MultipleObjectsReturned(self.model)
+        result = (await self._exec_scalar(get_query)).one_or_none()
 
         defaults = defaults or {}
         created = False
