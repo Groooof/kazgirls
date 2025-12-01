@@ -279,6 +279,10 @@ const initSocket = () => {
     reconnectionDelayMax: 5000,
   })
 
+  setInterval(() => {
+    try { socket.emit('ping', {}) } catch (_) {}
+  }, 20000)
+
   socket.value?.emit('webrtc:offer', { streamerId, viewerId: viewerId.value ?? undefined, })
 
   socket.value.on('connect', () => {

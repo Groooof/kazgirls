@@ -123,6 +123,10 @@ const initSocket = () => {
     transports: ['websocket'],
   })
 
+  setInterval(() => {
+    try { socket.emit('ping', {}) } catch (_) {}
+  }, 20000)
+
   socket.value.on('connect', () => {
     isSocketConnected.value = true
   })
