@@ -5,7 +5,7 @@ import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import { config } from '@/config'
 import Cookies from 'js-cookie'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 type Me = {
   id: number
@@ -16,6 +16,7 @@ type Me = {
 
 const token = Cookies.get('access_token')
 const route = useRoute()
+const router = useRouter()
 const streamerId = Number(route.params.id)
 
 const viewerId = ref<number | null>(null)
@@ -26,6 +27,7 @@ const rtcConfig: RTCConfiguration = {
 
 const socket = ref<Socket | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
+const screenPc = ref<RTCPeerConnection | null>(null)
 
 const remoteStream = ref<MediaStream | null>(null)
 const isSocketConnected = ref(false)
@@ -43,7 +45,61 @@ const canConnect = computed(
   () => !!pendingOffer.value && isSocketConnected.value && !isConnecting.value,
 )
 
+const isSharingScreen = ref(false)
+const screenStream = ref<MediaStream | null>(null)
+
 const hadStreamEver = ref(false)
+
+const shareScreen = async () => {
+  if (!socket.value || !isSocketConnected.value) {
+    console.warn('[VIEWER] cannot share screen: no socket')
+    return
+  }
+
+  try {
+    const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+      video: true,
+      audio: false,
+    })
+
+    screenStream.value = stream
+    isSharingScreen.value = true
+
+    if (!screenPc.value) {
+      createScreenPeerConnection()
+    }
+    if (!screenPc.value) {
+      console.warn('[VIEWER] no screenPc after createScreenPeerConnection')
+      return
+    }
+
+    // вешаем треки экрана на отдельный PC
+    stream.getTracks().forEach((track) => {
+      screenPc.value?.addTrack(track, stream)
+    })
+
+    const offer = await screenPc.value.createOffer()
+    await screenPc.value.setLocalDescription(offer)
+
+    socket.value?.emit('webrtc:offer', {
+      streamerId,
+      sdp: offer,
+      screen: true, // 👈 флаг экрана
+    })
+
+    console.log('[VIEWER] sent screen-share offer')
+  } catch (e) {
+    console.error('[VIEWER] shareScreen error', e)
+    isSharingScreen.value = false
+
+    if (screenStream.value) {
+      screenStream.value.getTracks().forEach((t) => t.stop())
+      screenStream.value = null
+    }
+
+    // если пользователь просто закрыл диалог выбора экрана — это тоже сюда попадёт
+  }
+}
 
 const loadMe = async () => {
   try {
@@ -62,6 +118,27 @@ const loadMe = async () => {
     }
   } catch (e) {
     console.error('[VIEWER] loadMe error', e)
+  }
+}
+
+const isLoggingOut = ref(false)
+
+const logout = async () => {
+  if (isLoggingOut.value) return
+  isLoggingOut.value = true
+
+  try {
+    await axios.post(
+      `${config.url}${config.apiUrl}/tokens/logout`, {
+        withCredentials: true,
+      }
+    )
+  } catch (e) {
+    console.error('[STREAMER] logout error', e)
+  } finally {
+    isLoggingOut.value = false
+    // 👇 сюда подставь свой маршрут логина, если он отличается
+    router.push({ name: 'Login' }).catch(() => {})
   }
 }
 
@@ -200,6 +277,47 @@ const createPeerConnection = () => {
   }
 }
 
+const createScreenPeerConnection = () => {
+  console.log('[VIEWER] createScreenPeerConnection')
+
+  const peer = new RTCPeerConnection(rtcConfig)
+  screenPc.value = peer
+
+  peer.onicecandidate = (event) => {
+    console.log('[VIEWER][screen] onicecandidate', event.candidate)
+    if (event.candidate) {
+      socket.value?.emit('webrtc:ice', {
+        streamerId,
+        candidate: event.candidate.toJSON(),
+        from: 'viewer',
+        screen: true,
+      })
+    }
+  }
+
+  peer.onconnectionstatechange = () => {
+    const state = peer.connectionState
+    console.log('[VIEWER][screen] connection state:', state)
+
+    if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      console.log('[VIEWER][screen] closing screenPc due to state', state)
+      try {
+        screenPc.value?.getSenders().forEach((s) => s.track?.stop())
+        screenPc.value?.close()
+      } catch (e) {
+        console.warn('[VIEWER] error closing screenPc', e)
+      }
+      screenPc.value = null
+      isSharingScreen.value = false
+
+      if (screenStream.value) {
+        screenStream.value.getTracks().forEach((t) => t.stop())
+        screenStream.value = null
+      }
+    }
+  }
+}
+
 const cleanupConnection = () => {
   if (isCleaningUp) return
   isCleaningUp = true
@@ -280,7 +398,7 @@ const initSocket = () => {
   })
 
   setInterval(() => {
-    try { socket.emit('ping', {}) } catch (_) {}
+    try { socket.value.emit('ping', {}) } catch (_) {}
   }, 20000)
 
   socket.value?.emit('webrtc:offer', { streamerId, viewerId: viewerId.value ?? undefined, })
@@ -334,19 +452,65 @@ const initSocket = () => {
     },
   )
 
-  socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
-    console.log('[VIEWER] webrtc:ice received', payload)
-    if (payload.streamerId !== streamerId) return
-    if (!pc.value) {
-      console.warn('[VIEWER] got ICE but no pc, ignoring')
-      return
-    }
-    try {
-      await pc.value.addIceCandidate(new RTCIceCandidate(payload.candidate))
-    } catch (e) {
-      console.error('Error adding ICE candidate (viewer)', e)
-    }
-  })
+  socket.value.on(
+    'webrtc:answer',
+    async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit; screen?: boolean }) => {
+      console.log('[VIEWER] webrtc:answer received', payload)
+
+      if (payload.streamerId !== streamerId) return
+
+      // Ответ для экрана
+      if (payload.screen) {
+        if (!screenPc.value) {
+          console.warn('[VIEWER] got screen-answer but no screenPc')
+          return
+        }
+        try {
+          await screenPc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+          console.log('[VIEWER] remoteDescription updated for screenPc from streamer answer')
+        } catch (e) {
+          console.error('[VIEWER] error setting remoteDescription on screenPc from answer', e)
+        }
+        return
+      }
+
+      // Обычный ответ (как было)
+      if (!pc.value) {
+        console.warn('[VIEWER] got answer but no pc')
+        return
+      }
+
+      try {
+        await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+        console.log('[VIEWER] remoteDescription updated from streamer answer')
+      } catch (e) {
+        console.error('[VIEWER] error setting remoteDescription from answer', e)
+      }
+    },
+  )
+
+
+  socket.value.on(
+    'webrtc:ice',
+    async (payload: { streamerId: number; candidate: RTCIceCandidateInit; screen?: boolean }) => {
+      console.log('[VIEWER] webrtc:ice received', payload)
+
+      if (payload.streamerId !== streamerId) return
+
+      const targetPc = payload.screen ? screenPc.value : pc.value
+      if (!targetPc) {
+        console.warn('[VIEWER] got ICE but no target pc (screen =', payload.screen, ')')
+        return
+      }
+
+      try {
+        await targetPc.addIceCandidate(new RTCIceCandidate(payload.candidate))
+      } catch (e) {
+        console.error('Error adding ICE candidate (viewer)', e)
+      }
+    },
+  )
+
 
   // 🔔 сообщения чата
   socket.value.on('message', async(msg: ChatMessage) => {
@@ -419,9 +583,20 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <div class="status-chip" :class="isSocketConnected ? 'status-chip--ok' : 'status-chip--bad'">
-          <span class="status-dot" :class="isSocketConnected ? 'status-dot--ok' : 'status-dot--bad'"></span>
-          <span>{{ isSocketConnected ? 'Онлайн' : 'Офлайн' }}</span>
+        <div class="header-right">
+          <div class="status-chip" :class="isSocketConnected ? 'status-chip--ok' : 'status-chip--bad'">
+            <span class="status-dot" :class="isSocketConnected ? 'status-dot--ok' : 'status-dot--bad'"></span>
+            <span>{{ isSocketConnected ? 'Онлайн' : 'Офлайн' }}</span>
+          </div>
+
+          <button
+            class="chat-send-btn btn-logout"
+            type="button"
+            :disabled="isLoggingOut"
+            @click="logout"
+          >
+            {{ isLoggingOut ? 'Выходим...' : 'Выйти' }}
+          </button>
         </div>
       </header>
 
@@ -456,6 +631,17 @@ onBeforeUnmount(() => {
               <span v-else>Подключиться к стриму</span>
             </button>
           </div>
+        </div>
+
+        <div class="share-row">
+          <button
+            class="share-btn"
+            type="button"
+            :disabled="!hasStream || !isSocketConnected || isSharingScreen"
+            @click="shareScreen"
+          >
+            {{ isSharingScreen ? 'Экран шарится' : 'Поделиться экраном' }}
+          </button>
         </div>
 
         <!-- ЧАТ: показываем только когда есть поток -->
@@ -528,6 +714,12 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .viewer-card {
   width: 100%;
   max-width: 960px;
@@ -558,6 +750,37 @@ onBeforeUnmount(() => {
   margin: 4px 0 0;
   font-size: 13px;
   color: #9ca3af;
+}
+
+.share-row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.share-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #22c55e, #0ea5e9);
+  color: #f9fafb;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.4);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s ease;
+}
+
+.share-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+
+.share-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(34, 197, 94, 0.6);
 }
 
 .status-chip {
@@ -633,7 +856,6 @@ onBeforeUnmount(() => {
   width: 100%;
   border-radius: 12px;
   overflow: hidden;
-  background: #020617;
   border: 1px solid rgba(15, 23, 42, 0.9);
 }
 
@@ -642,7 +864,6 @@ onBeforeUnmount(() => {
   width: 100%;
   height: auto;
   max-height: 70vh;
-  background: #020617;
 }
 
 .video-overlay {

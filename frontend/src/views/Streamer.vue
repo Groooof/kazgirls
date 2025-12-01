@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
 import { config } from '@/config'
@@ -10,8 +10,11 @@ import Cookies from 'js-cookie'
 const token = Cookies.get('access_token')
 
 const route = useRoute()
+const router = useRouter()
 const streamerId = Number(route.params.id)
 const viewerId = ref<number | null>(null)
+
+const remotePlayerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -21,6 +24,7 @@ const rtcConfig: RTCConfiguration = {
 
 const socket = ref<Socket | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
+const screenPc = ref<RTCPeerConnection | null>(null)
 
 const localStream = ref<MediaStream | null>(null)
 // опционально — чтобы видеть, что прилетает обратно (для отладки)
@@ -28,6 +32,27 @@ const remoteStream = ref<MediaStream | null>(null)
 
 const isStreaming = ref(false)
 const isSocketConnected = ref(false)
+
+const isLoggingOut = ref(false)
+
+const logout = async () => {
+  if (isLoggingOut.value) return
+  isLoggingOut.value = true
+
+  try {
+    await axios.post(
+      `${config.url}${config.apiUrl}/tokens/logout`, {
+        withCredentials: true,
+      }
+    )
+  } catch (e) {
+    console.error('[STREAMER] logout error', e)
+  } finally {
+    isLoggingOut.value = false
+    // 👇 сюда подставь свой маршрут логина, если он отличается
+    router.push({ name: 'Login' }).catch(() => {})
+  }
+}
 
 /** ----- ЧАТ ----- */
 
@@ -124,7 +149,7 @@ const initSocket = () => {
   })
 
   setInterval(() => {
-    try { socket.emit('ping', {}) } catch (_) {}
+    try { socket.value.emit('ping', {}) } catch (_) {}
   }, 20000)
 
   socket.value.on('connect', () => {
@@ -154,34 +179,78 @@ const initSocket = () => {
 
 
   // ice-кандидаты от Viewer
-  socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
-    if (payload.streamerId !== streamerId) return
-    if (!pc.value) return
-    try {
-      await pc.value.addIceCandidate(new RTCIceCandidate(payload.candidate))
-    } catch (e) {
-      console.error('Error adding ICE candidate', e)
-    }
-  })
+  socket.value.on(
+    'webrtc:ice',
+    async (payload: { streamerId: number; candidate: RTCIceCandidateInit; screen?: boolean }) => {
+      if (payload.streamerId !== streamerId) return
+
+      const targetPc = payload.screen ? screenPc.value : pc.value
+      if (!targetPc) {
+        console.warn('[STREAMER] got ICE but no target pc (screen =', payload.screen, ')')
+        return
+      }
+
+      try {
+        await targetPc.addIceCandidate(new RTCIceCandidate(payload.candidate))
+      } catch (e) {
+        console.error('Error adding ICE candidate', e)
+      }
+    },
+  )
+
 
   // 🔥 ВАЖНО: отличаем запрос (без sdp) от обычного оффера (со sdp)
   socket.value.on(
     'webrtc:offer',
-    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit; viewerId?: number }) => {
+    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit; viewerId?: number; screen?: boolean }) => {
       console.log('[STREAMER] webrtc:offer received', payload)
 
       if (payload.streamerId !== streamerId) return
 
-      // если есть sdp — это либо наш же broadcast, либо не "запрос" от viewer → игнорим
-      if (payload.sdp) {
+      // 1) ОФФЕР ДЛЯ ЭКРАНА (screen = true)
+      if (payload.screen && payload.sdp) {
+        if (!screenPc.value) {
+          createScreenPeerConnection()
+        }
+        if (!screenPc.value) {
+          console.warn('[STREAMER] got screen-offer but no screenPc')
+          return
+        }
+
+        try {
+          await screenPc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+
+          const answer = await screenPc.value.createAnswer()
+          await screenPc.value.setLocalDescription(answer)
+
+          socket.value?.emit('webrtc:answer', {
+            streamerId,
+            sdp: answer,
+            screen: true,
+          })
+          console.log('[STREAMER] sent screen answer for viewer screen-share')
+        } catch (e) {
+          console.error('[STREAMER] error handling screen SDP-offer from viewer', e)
+        }
+
         return
       }
 
-      console.log(payload)
+      // 2) Обычный сценарий (как и раньше):
+      //    - запрос без SDP от зрителя: "дай оффер"
+      //    - наш оффер со стримом для зрителя
 
-      // 👇 здесь как раз "запрос" от зрителя (без sdp)
+      // если это не screen-ветка и есть sdp — это твой текущий
+      // рабочий кейс (его можно оставить как было, но ты сейчас
+      // его не используешь для стримера, так что просто игнорим)
+      if (payload.sdp) {
+        // оффер со стороны стримера зрителям ты сам создаёшь в startStream
+        // поэтому тут ничего делать не нужно
+        return
+      }
+
+      // запрос "дай оффер" без SDP
       if (payload.viewerId) {
-        console.log(payload.viewerId)
         viewerId.value = payload.viewerId
         console.log('[STREAMER] viewerId установлен =', viewerId.value)
 
@@ -252,16 +321,88 @@ const createPeerConnection = () => {
 
   // если стример тоже будет что-то получать (обычно не надо)
   pc.value.ontrack = (event) => {
-    if (!remoteStream.value) {
-      remoteStream.value = new MediaStream()
+    console.log('[STREAMER] ontrack', event.streams, event.track)
+
+    // если браузер отдал готовый MediaStream – используем его
+    const [firstStream] = event.streams
+
+    if (firstStream) {
+      remoteStream.value = firstStream as MediaStream
+    } else {
+      // fallback – как раньше
+      if (!remoteStream.value) {
+        remoteStream.value = new MediaStream()
+      }
+      remoteStream.value.addTrack(event.track)
     }
-    remoteStream.value.addTrack(event.track)
+
+    // после прихода трека попробуем запустить плеер
+    nextTick(() => {
+      remotePlayerRef.value?.play?.()
+    })
   }
 
   // добавляем свои треки
   if (localStream.value) {
     localStream.value.getTracks().forEach((track) => {
       pc.value?.addTrack(track, localStream.value as MediaStream)
+    })
+  }
+}
+
+const createScreenPeerConnection = () => {
+  console.log('[STREAMER] createScreenPeerConnection')
+  const peer = new RTCPeerConnection(rtcConfig)
+  screenPc.value = peer
+
+  peer.onicecandidate = (event) => {
+    if (event.candidate) {
+      console.log('[STREAMER][screen] onicecandidate', event.candidate)
+      socket.value?.emit('webrtc:ice', {
+        streamerId,
+        candidate: event.candidate.toJSON(),
+        from: 'streamer',
+        screen: true,
+      })
+    }
+  }
+
+  peer.onconnectionstatechange = () => {
+    const state = peer.connectionState
+    console.log('[STREAMER][screen] connection state:', state)
+
+    if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+      console.log('[STREAMER][screen] closing screenPc due to state', state)
+      try {
+        screenPc.value?.getReceivers().forEach((r) => r.track?.stop())
+        screenPc.value?.close()
+      } catch (e) {
+        console.warn('[STREAMER] error closing screenPc', e)
+      }
+      screenPc.value = null
+
+      if (remoteStream.value) {
+        remoteStream.value.getTracks().forEach((t) => t.stop())
+        remoteStream.value = null
+      }
+    }
+  }
+
+  peer.ontrack = (event) => {
+    console.log('[STREAMER][screen] ontrack', event.streams, event.track)
+
+    const [firstStream] = event.streams
+    if (firstStream) {
+      remoteStream.value = firstStream as MediaStream
+    } else {
+      if (!remoteStream.value) {
+        remoteStream.value = new MediaStream()
+      }
+      remoteStream.value.addTrack(event.track)
+    }
+
+    nextTick(() => {
+      remotePlayerRef.value?.play?.()
     })
   }
 }
@@ -307,9 +448,28 @@ const stopStream = () => {
   localStream.value?.getTracks().forEach((t) => t.stop())
   localStream.value = null
 
-  // при остановке стрима зачистим чат (опционально)
+  remoteStream.value?.getTracks().forEach((t) => t.stop())
+  remoteStream.value = null
+
   chatMessages.value = []
 }
+
+watch(remoteStream, async (stream) => {
+  await nextTick()
+  const video = remoteVideoEl.value
+  if (!video) return
+
+  if (stream) {
+    video.srcObject = stream
+    try {
+      await video.play()
+    } catch (e) {
+      console.error('[STREAMER] remote video play error', e)
+    }
+  } else {
+    video.srcObject = null
+  }
+})
 
 onMounted(async () => {
   initSocket()
@@ -328,7 +488,7 @@ onBeforeUnmount(() => {
     <div class="streamer-card">
       <header class="streamer-header">
         <div>
-          <h1 class="streamer-title">Панель стримера #{{ streamerId }}</h1>
+          <h1 class="streamer-title">Стример #{{ streamerId }}</h1>
           <p class="streamer-subtitle">
             {{
               !isSocketConnected
@@ -340,18 +500,40 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <div class="status-chip" :class="isSocketConnected ? 'status-chip--ok' : 'status-chip--bad'">
-          <span class="status-dot" :class="isSocketConnected ? 'status-dot--ok' : 'status-dot--bad'"></span>
-          <span>{{ isSocketConnected ? 'Онлайн' : 'Офлайн' }}</span>
+        <div class="header-right">
+          <div class="status-chip" :class="isSocketConnected ? 'status-chip--ok' : 'status-chip--bad'">
+            <span class="status-dot" :class="isSocketConnected ? 'status-dot--ok' : 'status-dot--bad'"></span>
+            <span>{{ isSocketConnected ? 'Онлайн' : 'Офлайн' }}</span>
+          </div>
+
+          <button
+            class="chat-send-btn btn-logout"
+            type="button"
+            :disabled="isLoggingOut"
+            @click="logout"
+          >
+            {{ isLoggingOut ? 'Выходим...' : 'Выйти' }}
+          </button>
         </div>
       </header>
 
       <div class="streamer-body">
-        <div class="video-wrapper">
+        <div class="video-wrapper screen-share-wrapper">
           <VideoPlayer :src-object="localStream" :muted="true" />
 
           <div v-if="!localStream" class="video-overlay">
             <p class="video-overlay-text">Включите камеру, чтобы начать стрим</p>
+          </div>
+        </div>
+
+        <div
+          v-if="remoteStream"
+          class="video-wrapper screen-share-wrapper"
+        >
+          <VideoPlayer ref="remotePlayerRef" :src-object="remoteStream" :muted="true" />
+
+          <div class="screen-label">
+            Экран зрителя
           </div>
         </div>
 
@@ -443,6 +625,28 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
+.screen-share-wrapper {
+  margin-top: 12px;
+}
+
+.screen-label {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(15, 23, 42, 0.85);
+  color: #e5e7eb;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .streamer-card {
   width: 100%;
   max-width: 960px;
@@ -518,7 +722,6 @@ onBeforeUnmount(() => {
   width: 100%;
   border-radius: 12px;
   overflow: hidden;
-  background: #020617;
   border: 1px solid rgba(15, 23, 42, 0.9);
 }
 
@@ -527,7 +730,6 @@ onBeforeUnmount(() => {
   width: 100%;
   height: auto;
   max-height: 70vh;
-  background: #020617;
 }
 
 .video-overlay {
