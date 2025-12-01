@@ -47,6 +47,7 @@ async def connect_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id:
         pipe.hset("streamers:sid", streamer_id, sid)
         await pipe.execute()
 
+        # TODO: кидать ивент зрителю
         await sio.emit("streamers:connected", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
         await sio.emit("streamers:connected", to=sid, namespace=namespaces.lobby)
 
