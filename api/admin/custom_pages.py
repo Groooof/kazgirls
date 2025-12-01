@@ -73,7 +73,7 @@ class StreamersOnlineView(CustomBaseView):
                 }
             )
 
-        rows.sort(key=lambda r: r["streamer_last_seen"] is None or r["streamer_last_seen"], reverse=True)
+        rows.sort(key=lambda r: r["streamer_last_seen"] and r["streamer_last_seen"].timestamp() or 0, reverse=True)
         return await self.templates.TemplateResponse(
             request,
             "admin/streamers_data.html",
