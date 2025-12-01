@@ -26,7 +26,7 @@ async def disconnect_viewer(sio: socketio.AsyncServer, redis: Redis, viewer_id: 
             pipe.hdel("viewers:sid", viewer_id)
             pipe.hdel("streamers:viewers", streamer_id)
             pipe.hdel("viewers:streamers", viewer_id)
-            redis.hget("streamers:sid", streamer_id)
+            pipe.hget("streamers:sid", streamer_id)
             *_, streamer_sid = await pipe.execute()
 
             await sio.emit("streamers:free", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
