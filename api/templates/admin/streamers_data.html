@@ -1,0 +1,60 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+    <h2 class="page-title">Онлайн стримеры</h2>
+    <div class="page-pretitle">Данные берутся из Redis</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Связка стример ↔ зритель</h3>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table card-table table-striped">
+            <thead>
+            <tr>
+                <th>streamer</th>
+                <th>streamer_last_seen</th>
+                <th>streamer_sid</th>
+                <th>viewer</th>
+                <th>viewer_last_seen</th>
+                <th>viewer_sid</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+                <tr>
+                    <td>
+                        {# ССЫЛКА НА ОБЪЕКТ СТРИМЕРА В АДМИНКЕ #}
+                        {% if row.streamer_id %}
+                            {# по умолчанию identity = slugify(имя ModelView) #}
+                            <a href="{{ request.url_for('admin:details', identity='streamer-profile', pk=row.streamer_id) }}">
+                                {{ row.streamer }}
+                            </a>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>{{ row.streamer_last_seen or "-" }}</td>
+                    <td>{{ row.streamer_sid or "-" }}</td>
+                    <td>
+                        {# ССЫЛКА НА ОБЪЕКТ ЗРИТЕЛЯ В АДМИНКЕ #}
+                        {% if row.viewer_id %}
+                            <a href="{{ request.url_for('admin:details', identity='viewer-profile', pk=row.viewer_id) }}">
+                                {{ row.viewer }}
+                            </a>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>{{ row.viewer_last_seen or "-" }}</td>
+                    <td>{{ row.viewer_sid or "-" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

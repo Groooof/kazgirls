@@ -1,13 +1,8 @@
-from logic.streamers import clean_offline_streamers, clean_offline_viewers
+from logic.streamers import clean_offline_streamers
 from schemas.jobs import JobContext
 
 
 async def clean_offline_streamers_task(ctx: JobContext) -> None:
-    redis = ctx["redis_session"]
-    await clean_offline_streamers(redis)
-
-
-async def clean_offline_viewers_task(ctx: JobContext) -> None:
     sio = ctx["sio"]
     redis = ctx["redis_session"]
-    await clean_offline_viewers(sio, redis)
+    await clean_offline_streamers(sio, redis)
