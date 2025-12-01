@@ -57,7 +57,7 @@ class StreamersOnlineView(CustomBaseView):
             viewer_obj = viewers_by_id.get(viewer_id)
             viewer = viewer_obj and f"{viewer_obj and viewer_obj.name or 'unknown'} (id: {viewer_obj.id})"
             viewer_last_seen = viewers_online.get(viewer_id)
-            streamer_last_seen = viewer_last_seen and datetime.fromtimestamp(viewer_last_seen)
+            viewer_last_seen = viewer_last_seen and datetime.fromtimestamp(viewer_last_seen)
             viewer_sid = viewers_sid.get(viewer_id)
 
             rows.append(
