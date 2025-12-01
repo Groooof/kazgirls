@@ -105,7 +105,9 @@ async def lifespan(app: FastAPI):
         arq_pool_settings = RedisSettings.from_dsn(databases.arq_redis_url.unicode_string())
         arq_pool_settings.conn_retry_delay = 2
         arq_pool: ArqRedis = await create_pool(arq_pool_settings)
-        redis_pool: ConnectionPool = ConnectionPool.from_url(databases.redis_url.unicode_string())
+        redis_pool: ConnectionPool = ConnectionPool.from_url(
+            databases.redis_url.unicode_string(), decode_responses=True
+        )
 
     scheduler = init_scheduler()
     scheduler.start()
