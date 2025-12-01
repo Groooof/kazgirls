@@ -34,7 +34,7 @@ const isStream = computed(() => !!props.srcObject)
 const videoPlayerOptions: Plyr.Options = {
   ratio: props.aspectRatio,
   // ВАЖНО: добавляем pip в контролы, чтобы Plyr не отключал свой функционал
-  controls: ['play', 'volume', 'pip', 'fullscreen'],
+  controls: ['volume', 'pip', 'fullscreen'],
   pip: true,
 }
 
