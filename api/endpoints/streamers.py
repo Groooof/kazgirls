@@ -5,7 +5,8 @@ from dependencies import get_db, get_redis
 from dependencies.auth import get_current_active_user
 from exceptions.auth import WrongCredentials
 from exceptions.bases import Http403, Http404
-from logic.streamers import get_free_online_streamers, get_streamer, get_streamer_viewers, rate_streamer
+from logic.streamers import get_free_online_streamers, get_streamer, rate_streamer
+from logic.viewers import get_streamer_viewer
 from models import User
 from schemas.streamers import StreamerMarkSchema, StreamerSchema, ViewerSchema
 from utils.libs import generate_error_responses
@@ -70,13 +71,14 @@ async def rate_streamer_endpoint(
 
 
 @router.get(
-    "/{streamer_id}/viewers",
-    summary="Информация о зрителях стримера",
-    responses=generate_error_responses("GetStreamerViewersEndpointErrors", WrongCredentials),
+    "/{streamer_id}/viewer",
+    summary="Информация о зрителе стримера",
+    responses=generate_error_responses("GetStreamerViewerEndpointErrors", WrongCredentials, Http404),
 )
 async def get_streamer_viewers_endpoint(
     streamer_id: int,
     user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> list[ViewerSchema]:
-    return await get_streamer_viewers(db, streamer_id)
+    redis: AsyncSession = Depends(get_redis),
+) -> ViewerSchema:
+    return await get_streamer_viewer(db, redis, streamer_id)

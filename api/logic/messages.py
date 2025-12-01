@@ -3,7 +3,6 @@ from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
-from logic.streamers import get_streamer_room_name
 from models.messages import Message
 from repository.messages import MessageRepository
 from schemas.messages import MessageSchema
@@ -23,14 +22,13 @@ async def create_message(
     obj = Message(streamer_id=streamer_id, viewer_id=viewer_id, from_streamer=from_streamer, text=text)
     await repo.save(obj)
 
-    room = get_streamer_room_name(streamer_id)
     if from_streamer:
-        sid = await redis.hget("sids_by_viewer_id", viewer_id)
+        sid = await redis.hget("viewers:sid", viewer_id)
     else:
-        sid = await redis.hget("sids_by_streamer_id", streamer_id)
+        sid = await redis.hget("streamers:sid", streamer_id)
 
     data = MessageSchema(created=obj.created, text=text, from_streamer=from_streamer)
-    await sio.emit("message", data.model_dump(), to=sid, room=room, namespace=sockets_namespaces.streamers)
+    await sio.emit("message", data.model_dump(), to=sid, namespace=sockets_namespaces.streamers)
 
 
 def _get_message_schema_from_obj(message: Message) -> MessageSchema:

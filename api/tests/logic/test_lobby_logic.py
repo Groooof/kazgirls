@@ -2,14 +2,8 @@ from datetime import datetime, timedelta
 
 from freezegun import freeze_time
 
-from logic.streamers import (
-    clean_offline_viewers,
-    connect_streamer,
-    connect_viewer,
-    get_free_online_streamers,
-    get_free_online_streamers_ids,
-    ping_streamer,
-)
+from logic.streamers import connect_streamer, get_free_online_streamers, get_free_online_streamers_ids, ping_streamer
+from logic.viewers import clean_offline_viewers, connect_viewer
 from schemas.streamers import StreamerSchema
 from tests.custom_faker import fake_sid
 

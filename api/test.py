@@ -4,6 +4,36 @@ import socketio
 
 sio = socketio.AsyncClient()
 
+"""
+
+{
+    'streamers:online': {
+        1: '2025-12-01 12:39:00',
+        2: '2025-12-01 12:35:40',
+    },
+    'viewers:online': {
+        4: '2025-12-01 12:39:00',
+        6: '2025-12-01 12:35:40',
+    },
+    'streamers:viewers': {
+        1: 4,
+        2: 6,
+    },
+    'viewers:streamers': {
+        4: 1,
+        6: 2,
+    },
+    'streamers:sid': {
+        1: adk8fF8c9f,
+        2: lFFklffd93,
+    },
+    'viewers:sid': {
+        4: vKV9of091F,
+        6: fOd0mfJJ0z,
+    },
+
+"""
+
 
 # --- стандартные события ---
 @sio.event
@@ -53,5 +83,17 @@ async def main():
     await sio.disconnect()
 
 
+async def main2():
+    from dependencies.db import _get_db
+    from dependencies.redis import _get_redis
+    from logic.streamers import get_free_online_streamers, get_free_online_streamers_ids
+
+    async with _get_redis() as redis, _get_db() as db:
+        r = await get_free_online_streamers_ids(redis)
+        r2 = await get_free_online_streamers(db, redis)
+        print(r)
+        print(r2)
+
+
 loop = asyncio.get_event_loop()
-loop.run_until_complete(main())
+loop.run_until_complete(main2())

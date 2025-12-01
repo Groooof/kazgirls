@@ -1,72 +1,54 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import socketio
-from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from exceptions.bases import Http404
-from exceptions.streamers import NoSeatsError
-from logic.viewers import _get_viewer_schema_from_obj
 from models.streamers import StreamerMark, StreamerProfile
-from models.viewers import ViewerProfile
 from repository.streamers import StreamerMarkRepository, StreamerProfileRepository
-from repository.viewers import ViewerProfileRepository
-from schemas.streamers import StreamerSchema, ViewerSchema
-from settings.conf import sockets_namespaces
+from schemas.streamers import StreamerSchema
+from settings.conf import sockets_namespaces as namespaces
 from utils.libs import utc_now
 
 
-def get_streamer_room_name(streamer_id: int) -> str:
-    return f"room_{streamer_id}"
+async def disconnect_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id: int, reason: str) -> None:
+    async with redis.lock(f"streamers:{streamer_id}:disconnect:lock", timeout=5):
+        pipe = redis.pipeline()
+        pipe.hget("streamers:sid", streamer_id)
+        pipe.hget("streamers:viewers", streamer_id)
+        sid, viewer_id = await pipe.execute()
+        viewer_id = viewer_id or "0"
+
+        if sid:
+            pipe = redis.pipeline()
+            pipe.zrem("streamers:online", streamer_id)
+            pipe.hdel("streamers:sid", streamer_id)
+            pipe.hget("viewers:sid", viewer_id)
+            *_, viewer_sid = await pipe.execute()
+
+            if viewer_sid:
+                await sio.emit(
+                    "streamers:disconnected", {"reason": reason}, to=viewer_sid, namespace=namespaces.streamers
+                )
+            await sio.emit("streamers:disconnected", {"reason": reason}, to=sid, namespace=namespaces.streamers)
+            await sio.emit("streamers:disconnected", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
+            await sio.disconnect(sid, namespaces.streamers)
 
 
 async def connect_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id: int, sid: str) -> None:
-    now_ts = int(utc_now().timestamp())
-    room = get_streamer_room_name(streamer_id)
+    async with redis.lock(f"streamers:{streamer_id}:connect:lock", timeout=5):
+        await disconnect_streamer(sio, redis, streamer_id, "second_connect")
 
-    other_sid = await redis.hget("sids_by_streamer_id", streamer_id)
-    if other_sid:
-        await sio.emit("disconnect:second_connect", room=room, to=other_sid, namespace=sockets_namespaces.streamers)
-        await sio.disconnect(other_sid, sockets_namespaces.streamers)
-        await sio.leave_room(other_sid, room, sockets_namespaces.streamers)
+        now_ts = int(utc_now().timestamp())
+        pipe = redis.pipeline()
+        pipe.zadd("streamers:online", {streamer_id: now_ts})
+        pipe.hset("streamers:sid", streamer_id, sid)
+        await pipe.execute()
 
-    await redis.zadd("streamers:online", {streamer_id: now_ts})
-    await redis.hset("sids_by_streamer_id", streamer_id, sid)
-
-
-async def connect_viewer(sio: socketio.AsyncServer, redis: Redis, viewer_id: int, sid: str, streamer_id: int) -> None:
-    # TODO: что делать если подключен к другому стримеру?
-    now_ts = int(utc_now().timestamp())
-
-    # TODO: сделать строго один стример - один зритель
-    async with redis.lock(f"streamer:{streamer_id}:viewers:lock", timeout=5):
-        viewers_ids = await redis.zrange(f"streamers:{streamer_id}:viewers", 0, -1)
-        if str(viewer_id) not in viewers_ids and len(viewers_ids) >= 1:
-            raise NoSeatsError
-
-        room = get_streamer_room_name(streamer_id)
-        other_sid = await redis.hget("sids_by_viewer_id", viewer_id)
-        if other_sid:
-            await sio.emit("disconnect:second_connect", room=room, to=other_sid, namespace=sockets_namespaces.streamers)
-            await sio.disconnect(other_sid, sockets_namespaces.streamers)
-            await sio.leave_room(other_sid, room, sockets_namespaces.streamers)
-
-        streamer_sid = await redis.hget("sids_by_streamer_id", streamer_id)
-        await redis.zadd(f"streamers:{streamer_id}:viewers", {viewer_id: now_ts})
-        await redis.hset("sids_by_viewer_id", viewer_id, sid)
-        await sio.emit(
-            "viewers:connected",
-            {"viewer_id": viewer_id},
-            room=room,
-            to=streamer_sid,
-            namespace=sockets_namespaces.streamers,
-        )
-
-        viewers_ids = await redis.zrange(f"streamers:{streamer_id}:viewers", 0, -1)
-        if len(viewers_ids) >= 1:
-            await sio.emit("streamers:busy", {"streamer_id": streamer_id}, namespace=sockets_namespaces.lobby)
+        await sio.emit("streamers:connected", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
+        await sio.emit("streamers:connected", to=sid, namespace=namespaces.lobby)
 
 
 async def ping_streamer(redis: Redis, streamer_id: int) -> None:
@@ -74,82 +56,29 @@ async def ping_streamer(redis: Redis, streamer_id: int) -> None:
     await redis.zadd("streamers:online", {streamer_id: now_ts})
 
 
-async def ping_viewer(redis: Redis, viewer_id: int, streamer_id: int) -> None:
-    now_ts = int(utc_now().timestamp())
-    await redis.zadd(f"streamers:{streamer_id}:viewers", {viewer_id: now_ts})
+async def offer_from_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id: int, data: dict) -> None:
+    viewer_id = await redis.hget("streamers:viewers", streamer_id)
+    viewer_sid = await redis.hget("viewers:sid", viewer_id)
+    await sio.emit("webrtc:offer", data, to=viewer_sid, namespace=namespaces.streamers)
 
 
-async def clean_offline_streamers(redis: Redis) -> None:
+async def answer_from_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id: int, data: dict) -> None:
+    viewer_id = await redis.hget("streamers:viewers", streamer_id)
+    viewer_sid = await redis.hget("viewers:sid", viewer_id)
+    await sio.emit("webrtc:answer", data, to=viewer_sid, namespace=namespaces.streamers)
+
+
+async def ice_from_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id: int, data: dict) -> None:
+    viewer_id = await redis.hget("streamers:viewers", streamer_id)
+    viewer_sid = await redis.hget("viewers:sid", viewer_id)
+    await sio.emit("webrtc:ice", data, to=viewer_sid, namespace=namespaces.streamers)
+
+
+async def clean_offline_streamers(sio: socketio.AsyncServer, redis: Redis) -> None:
     max_timestamp = int((utc_now() - timedelta(minutes=2)).timestamp())
-    await redis.zremrangebyscore("streamers:online", 0, max_timestamp)
-
-
-async def clean_streamer_offline_viewers(sio: socketio.AsyncServer, redis: Redis, streamer_id: int) -> None:
-    key = f"streamers:{streamer_id}:viewers"
-    max_timestamp = int((utc_now() - timedelta(minutes=2)).timestamp())
-
-    active_viewers_ids = []
-    viewers_ids = await redis.zrange(key, 0, -1, withscores=True)
-    for viewer_id, last_seen_ts in viewers_ids:
-        if last_seen_ts > max_timestamp:
-            active_viewers_ids.append(viewer_id)
-            continue
-
-        last_seen_dt = datetime.fromtimestamp(last_seen_ts)
-        logger.info(
-            "Disconnecting inactive viewer (id: {}) from streamer (id: {}); last seen {}",
-            viewer_id,
-            streamer_id,
-            last_seen_dt,
-        )
-
-        room = get_streamer_room_name(streamer_id)
-        sid = await redis.hget("sids_by_viewer_id", viewer_id)
-
-        await sio.emit("disconnect:inactive", room=room, to=sid, namespace=sockets_namespaces.streamers)
-        await sio.disconnect(sid, sockets_namespaces.streamers)
-        await sio.leave_room(sid, room, sockets_namespaces.streamers)
-
-    await redis.zremrangebyscore(key, 0, max_timestamp)
-    if len(active_viewers_ids) < 1:
-        await sio.emit("streamers:free", {"streamer_id": streamer_id}, namespace=sockets_namespaces.lobby)
-
-
-async def clean_offline_viewers(sio: socketio.AsyncServer, redis: Redis) -> None:
-    keys = redis.scan_iter("streamers:*:viewers", count=1000)
-    async for key in keys:
-        _, streamer_id, _ = key.split(":")
-        await clean_streamer_offline_viewers(sio, redis, int(streamer_id))
-
-
-async def get_free_online_streamers_ids(redis: Redis) -> list[int]:
-    streamers_ids = await redis.zrange("streamers:online", 0, -1)
-
-    pipe = redis.pipeline()
-    [pipe.zrange(f"streamers:{streamer_id}:viewers", 0, -1) for streamer_id in streamers_ids]
-    streamers_viewers_ids = await pipe.execute()
-
-    free_streamres_ids = []
-    for streamer_id, viewers_ids in zip(streamers_ids, streamers_viewers_ids):
-        if len(viewers_ids) < 1:
-            free_streamres_ids.append(int(streamer_id))
-    return free_streamres_ids
-
-
-async def get_streamer_viewers_ids(redis: Redis, streamer_id: int) -> list[int]:
-    key = f"streamers:{streamer_id}:viewers"
-    viewers_ids = await redis.zrange(key, 0, -1)
-    return list(map(int, viewers_ids))
-
-
-async def get_streamer_viewers(db: AsyncSession, redis: Redis, streamer_id: int) -> list[ViewerSchema]:
-    viewers_ids = await get_streamer_viewers_ids(redis, streamer_id)
-    if not viewers_ids:
-        return []
-
-    repo = ViewerProfileRepository(db)
-    viewers = await repo.list_(ViewerProfile.id.in_(viewers_ids))
-    return [_get_viewer_schema_from_obj(viewer) for viewer in viewers]
+    streamers_ids = await redis.zrangebyscore("streamers:online", 0, max_timestamp)
+    for streamer_id in streamers_ids:
+        await disconnect_streamer(sio, redis, streamer_id, "inactive")
 
 
 async def get_streamer_rating(db: AsyncSession, streamer_id: int) -> tuple[float, int]:
@@ -161,12 +90,29 @@ async def get_streamer_rating(db: AsyncSession, streamer_id: int) -> tuple[float
     return result.one()[0]
 
 
-async def _get_streamer_schema_from_obj(db: AsyncSession, streamer: StreamerProfile) -> StreamerSchema:
+async def serialize_streamer(db: AsyncSession, streamer: StreamerProfile) -> StreamerSchema:
     rating = streamer.force_rating or await get_streamer_rating(db, streamer.id)
     rating = rating and round(rating, 2)
 
     avatar_url = streamer.avatar_url
     return StreamerSchema(id=streamer.id, name=streamer.name, rating=rating, avatar_url=avatar_url)
+
+
+async def get_streamer(db: AsyncSession, redis: Redis, streamer_id: int) -> StreamerSchema:
+    repo = StreamerProfileRepository(db)
+    streamer = await repo.first(StreamerProfile.id == streamer_id)
+    if not streamer:
+        raise Http404
+
+    return await serialize_streamer(db, streamer)
+
+
+async def get_free_online_streamers_ids(redis: Redis) -> list[int]:
+    pipe = redis.pipeline()
+    pipe.zrange("streamers:online", 0, -1)
+    pipe.hkeys("streamers:viewers")
+    online_streamers_ids, busy_streamers_ids = await pipe.execute()
+    return list(map(int, set(online_streamers_ids) - set(busy_streamers_ids)))
 
 
 async def get_free_online_streamers(db: AsyncSession, redis: Redis) -> list[StreamerSchema]:
@@ -176,16 +122,7 @@ async def get_free_online_streamers(db: AsyncSession, redis: Redis) -> list[Stre
 
     repo = StreamerProfileRepository(db)
     streamers = await repo.list_(StreamerProfile.id.in_(streamers_ids))
-    return [await _get_streamer_schema_from_obj(db, streamer) for streamer in streamers]
-
-
-async def get_streamer(db: AsyncSession, streamer_id: int) -> StreamerSchema:
-    repo = StreamerProfileRepository(db)
-    streamer = await repo.first(StreamerProfile.id == streamer_id)
-    if not streamer:
-        raise Http404
-
-    return await _get_streamer_schema_from_obj(db, streamer)
+    return [await serialize_streamer(db, streamer) for streamer in streamers]
 
 
 async def rate_streamer(db: AsyncSession, viewer_id: int, mark: int, streamer_id: int) -> None:
@@ -200,3 +137,8 @@ async def rate_streamer(db: AsyncSession, viewer_id: int, mark: int, streamer_id
         viewer_id=viewer_id,
         streamer_id=streamer_id,
     )
+
+
+async def is_streamer_exists(db: AsyncSession, streamer_id: int) -> bool:
+    repo = StreamerProfileRepository(db)
+    return await repo.exists(StreamerProfile.id == streamer_id)

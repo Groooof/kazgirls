@@ -16,7 +16,8 @@ from dependencies.db import get_binds
 from schemas.jobs import JobContext
 from settings.conf import databases, settings
 from settings.db import EngineTypeEnum, engines
-from tasks.streamers import clean_offline_streamers_task, clean_offline_viewers_task
+from tasks.streamers import clean_offline_streamers_task
+from tasks.viewers import clean_offline_viewers_task
 from utils.constants import HOUR
 
 
