@@ -10,7 +10,7 @@ const token = Cookies.get('access_token')
 const route = useRoute()
 const streamerId = Number(route.params.id)
 
-const rtcConfigRelayOnly: RTCConfiguration = {
+const rtcConfig: RTCConfiguration = {
   iceServers: [
     {
       urls: [
