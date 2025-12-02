@@ -518,7 +518,6 @@ onBeforeUnmount(() => {
   width: 100%;
   border-radius: 12px;
   overflow: hidden;
-  background: #020617;
   border: 1px solid rgba(15, 23, 42, 0.9);
 }
 
@@ -527,7 +526,6 @@ onBeforeUnmount(() => {
   width: 100%;
   height: auto;
   max-height: 70vh;
-  background: #020617;
 }
 
 .video-overlay {
