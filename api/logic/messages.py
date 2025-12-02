@@ -18,7 +18,7 @@ async def create_message(
         return
 
     repo = MessageRepository(db)
-    obj = Message(streamer_id=streamer_id, viewer_id=viewer_id, from_streamer=from_streamer, text=text)
+    obj = Message(streamer_id=streamer_id, viewer_id=int(viewer_id), from_streamer=from_streamer, text=text)
     await repo.save(obj)
 
     if from_streamer:
