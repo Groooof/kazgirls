@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import axios from 'axios'
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { io, Socket } from 'socket.io-client'
 import VideoPlayer from './VideoPlayer.vue'
@@ -11,7 +10,6 @@ const token = Cookies.get('access_token')
 
 const route = useRoute()
 const streamerId = Number(route.params.id)
-const viewerId = ref<number | null>(null)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -29,93 +27,6 @@ const remoteStream = ref<MediaStream | null>(null)
 const isStreaming = ref(false)
 const isSocketConnected = ref(false)
 
-/** ----- ЧАТ ----- */
-
-interface ChatMessage {
-  created: string
-  from_streamer: boolean
-  text: string
-}
-
-const chatMessagesEl = ref<HTMLElement | null>(null)
-
-const scrollChatToBottom = async () => {
-  await nextTick()
-  const el = chatMessagesEl.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
-}
-
-const chatMessages = ref<ChatMessage[]>([])
-const chatInput = ref('')
-const isChatLoading = ref(false)
-const isChatSending = ref(false)
-
-const formatTime = (iso: string) => {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const loadChatHistory = async () => {
-  // история нужна только когда стрим идёт и мы знаем viewerId
-  if (!viewerId.value) return
-
-  isChatLoading.value = true
-  try {
-    const params = new URLSearchParams({
-      streamer_id: String(streamerId),
-      viewer_id: String(viewerId.value),
-    })
-
-    const { data } = await axios.get(
-      `${config.url}${config.apiUrl}/messages`,
-      {
-        params,
-        withCredentials: true,
-      },
-    )
-
-    chatMessages.value = Array.isArray(data) ? data : []
-
-    await scrollChatToBottom()
-  } catch (e) {
-    console.error('[STREAMER] loadChatHistory error', e)
-  } finally {
-    isChatLoading.value = false
-  }
-}
-
-const sendChatMessage = async () => {
-  const text = chatInput.value.trim()
-  if (!text || !socket.value || !isSocketConnected.value || !isStreaming.value) return
-
-  isChatSending.value = true
-  try {
-    // локально добавляем сообщение стримера
-    const now = new Date().toISOString()
-    const localMsg: ChatMessage = {
-      created: now,
-      from_streamer: true,
-      text,
-    }
-    chatMessages.value.push(localMsg)
-    await scrollChatToBottom()
-
-    socket.value.emit('message', { text })
-    chatInput.value = ''
-  } catch (e) {
-    console.error('[STREAMER] sendChatMessage error', e)
-  } finally {
-    isChatSending.value = false
-  }
-}
-
-/** ----- /ЧАТ ----- */
-
 const initSocket = () => {
   socket.value = io(`${config.url}/streamers`, {
     auth: { token },
@@ -123,12 +34,13 @@ const initSocket = () => {
     transports: ['websocket'],
   })
 
-
-
-
-
   socket.value.on('connect', () => {
     isSocketConnected.value = true
+
+    socket.value?.emit('join_stream', {
+      streamerId,
+      role: 'streamer',
+    })
   })
 
   socket.value.on('disconnect', () => {
@@ -136,22 +48,12 @@ const initSocket = () => {
   })
 
   // ответ от Viewer
-  socket.value.on(
-    'webrtc:answer',
-    async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit }) => {
-      if (payload.streamerId !== streamerId) return
-      if (!pc.value) return
+  socket.value.on('webrtc:answer', async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit }) => {
+    if (payload.streamerId !== streamerId) return
+    if (!pc.value) return
 
-      await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
-
-      // 🔥 зритель нажал "Подключиться к стриму" → прилетел answer
-      // viewerId к этому моменту мы уже получили из webrtc:offer (без sdp)
-      if (viewerId.value) {
-        loadChatHistory()
-      }
-    },
-  )
-
+    await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+  })
 
   // ice-кандидаты от Viewer
   socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
@@ -167,25 +69,14 @@ const initSocket = () => {
   // 🔥 ВАЖНО: отличаем запрос (без sdp) от обычного оффера (со sdp)
   socket.value.on(
     'webrtc:offer',
-    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit; viewerId?: number }) => {
+    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit }) => {
       console.log('[STREAMER] webrtc:offer received', payload)
 
       if (payload.streamerId !== streamerId) return
 
-      // если есть sdp — это либо наш же broadcast, либо не "запрос" от viewer → игнорим
+      // если есть sdp — это либо наш же broadcast, либо вообще не "запрос" от viewer → игнорим
       if (payload.sdp) {
         return
-      }
-
-      console.log(payload)
-
-      // 👇 здесь как раз "запрос" от зрителя (без sdp)
-      if (payload.viewerId) {
-        console.log(payload.viewerId)
-        viewerId.value = payload.viewerId
-        console.log('[STREAMER] viewerId установлен =', viewerId.value)
-
-        loadChatHistory()
       }
 
       if (!pc.value) {
@@ -194,6 +85,7 @@ const initSocket = () => {
       }
 
       try {
+        // создаём новый оффер с перезапуском ICE для нового зрителя
         const newOffer = await pc.value.createOffer({ iceRestart: true } as RTCOfferOptions)
         await pc.value.setLocalDescription(newOffer)
 
@@ -207,13 +99,6 @@ const initSocket = () => {
       }
     },
   )
-
-  // 🔔 сообщения чата
-  socket.value.on('message', async(msg: ChatMessage) => {
-    if (!msg || typeof msg.text !== 'string') return
-    chatMessages.value.push(msg)
-    await scrollChatToBottom()
-  })
 }
 
 const getLocalMedia = async () => {
@@ -307,8 +192,8 @@ const stopStream = () => {
   localStream.value?.getTracks().forEach((t) => t.stop())
   localStream.value = null
 
-  // при остановке стрима зачистим чат (опционально)
-  chatMessages.value = []
+  // можно послать событие на сервер, что стрим закончился
+  socket.value?.emit('stop_stream', { streamerId })
 }
 
 onMounted(async () => {
@@ -372,61 +257,6 @@ onBeforeUnmount(() => {
             Остановить стрим
           </button>
         </div>
-
-        <!-- ЧАТ: показываем только когда стрим запущен -->
-        <div v-if="isStreaming" class="chat-wrapper">
-          <h2 class="chat-title">Чат</h2>
-
-          <div class="chat-box">
-            <div ref="chatMessagesEl" class="chat-messages">
-              <p v-if="isChatLoading && !chatMessages.length" class="chat-empty">
-                Загружаем сообщения...
-              </p>
-              <p v-else-if="!isChatLoading && !chatMessages.length" class="chat-empty">
-                Пока нет сообщений
-              </p>
-
-              <div
-                v-for="(msg, idx) in chatMessages"
-                :key="idx"
-                class="chat-message"
-                :class="msg.from_streamer ? 'chat-message--self' : 'chat-message--other'"
-              >
-                <div class="chat-meta">
-                  <span class="chat-author">
-                    {{ msg.from_streamer ? 'Вы' : 'Зритель' }}
-                  </span>
-                  <span class="chat-time">{{ formatTime(msg.created) }}</span>
-                </div>
-                <div class="chat-text">
-                  {{ msg.text }}
-                </div>
-              </div>
-            </div>
-
-            <form class="chat-input-row" @submit.prevent="sendChatMessage">
-              <input
-                v-model="chatInput"
-                class="chat-input"
-                type="text"
-                placeholder="Напишите сообщение..."
-              >
-              <button
-                class="chat-send-btn"
-                type="submit"
-                :disabled="
-                  !chatInput.trim() ||
-                  !isSocketConnected ||
-                  !isStreaming ||
-                  isChatSending
-                "
-              >
-                {{ isChatSending ? 'Отправляем...' : 'Отправить' }}
-              </button>
-            </form>
-          </div>
-        </div>
-        <!-- /ЧАТ -->
       </div>
     </div>
   </div>
@@ -518,6 +348,7 @@ onBeforeUnmount(() => {
   width: 100%;
   border-radius: 12px;
   overflow: hidden;
+  background: #020617;
   border: 1px solid rgba(15, 23, 42, 0.9);
 }
 
@@ -526,6 +357,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: auto;
   max-height: 70vh;
+  background: #020617;
 }
 
 .video-overlay {
@@ -591,138 +423,4 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
   box-shadow: 0 16px 40px rgba(239, 68, 68, 0.45);
 }
-
-/* ---- ЧАТ ---- */
-
-.chat-wrapper {
-  margin-top: 18px;
-}
-
-.chat-title {
-  margin: 0 0 8px;
-  font-size: 15px;
-  font-weight: 500;
-  color: #e5e7eb;
-}
-
-.chat-box {
-  border-radius: 12px;
-  border: 1px solid rgba(30, 64, 175, 0.7);
-  background: radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), #020617);
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.chat-messages {
-  max-height: 220px;
-  overflow-y: auto;
-  padding-right: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.chat-empty {
-  margin: 4px 0;
-  font-size: 13px;
-  color: #9ca3af;
-}
-
-.chat-message {
-  max-width: 80%;
-  padding: 6px 8px;
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.chat-message--self {
-  margin-left: auto;
-  background: linear-gradient(135deg, #22c55e, #0ea5e9);
-  color: #f9fafb;
-}
-
-.chat-message--other {
-  margin-right: auto;
-  background: rgba(15, 23, 42, 0.96);
-  color: #e5e7eb;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-}
-
-.chat-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 2px;
-  opacity: 0.9;
-}
-
-.chat-author {
-  font-weight: 500;
-}
-
-.chat-time {
-  font-size: 11px;
-  opacity: 0.75;
-}
-
-.chat-text {
-  word-wrap: break-word;
-  white-space: pre-wrap;
-}
-
-.chat-input-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.chat-input {
-  flex: 1;
-  border-radius: 999px;
-  border: 1px solid rgba(75, 85, 99, 0.8);
-  background: #020617;
-  color: #e5e7eb;
-  padding: 7px 10px;
-  font-size: 13px;
-  outline: none;
-}
-
-.chat-input::placeholder {
-  color: #6b7280;
-}
-
-.chat-input:focus {
-  border-color: #38bdf8;
-}
-
-.chat-send-btn {
-  border: none;
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  background: linear-gradient(135deg, #22c55e, #0ea5e9);
-  color: #f9fafb;
-  cursor: pointer;
-  white-space: nowrap;
-  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.4);
-  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s ease;
-}
-
-.chat-send-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  box-shadow: none;
-  transform: none;
-}
-
-.chat-send-btn:not(:disabled):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 26px rgba(34, 197, 94, 0.6);
-}
-
-/* ---- /ЧАТ ---- */
 </style>
