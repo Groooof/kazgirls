@@ -3,7 +3,7 @@ interface Config {
   apiUrl: string
 }
 
-const isProd = true
+const isProd = false
 
 export const config: Config = {
   url: isProd ? '' : 'http://localhost:8000',

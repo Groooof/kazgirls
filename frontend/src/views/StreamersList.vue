@@ -12,6 +12,27 @@ interface ModelItem {
 
 const router = useRouter()
 
+const isLoggingOut = ref(false)
+
+const logout = async () => {
+  if (isLoggingOut.value) return
+  isLoggingOut.value = true
+
+  try {
+    await axios.post(
+      `${config.url}${config.apiUrl}/tokens/logout`,{}, {
+        withCredentials: true,
+      }
+    )
+  } catch (e) {
+    console.error('[STREAMER] logout error', e)
+  } finally {
+    isLoggingOut.value = false
+    // 👇 сюда подставь свой маршрут логина, если он отличается
+    router.push({ name: 'Login' }).catch(() => {})
+  }
+}
+
 // Моки — потом заменишь на данные с бэка
 const models = ref<ModelItem[]>([])
 
@@ -64,6 +85,15 @@ setInterval(() => {
             Выберите модель, чтобы открыть стрим
           </p>
         </div>
+
+        <button
+            class="chat-send-btn btn-logout"
+            type="button"
+            :disabled="isLoggingOut"
+            @click="logout"
+            >
+            {{ isLoggingOut ? 'Выходим...' : 'Выйти' }}
+        </button>
       </header>
 
       <main class="models-body">
@@ -138,6 +168,20 @@ setInterval(() => {
   background: #020617;
   padding: 24px 16px;
   box-sizing: border-box;
+}
+
+.chat-send-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #22c55e, #0ea5e9);
+  color: #f9fafb;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.4);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.1s ease;
 }
 
 .models-card {
