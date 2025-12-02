@@ -129,7 +129,7 @@ const logout = async () => {
 
   try {
     await axios.post(
-      `${config.url}${config.apiUrl}/tokens/logout`, {
+      `${config.url}${config.apiUrl}/tokens/logout`, {}, {
         withCredentials: true,
       }
     )
