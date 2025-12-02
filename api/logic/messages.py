@@ -12,9 +12,8 @@ from settings.conf import sockets_namespaces
 async def create_message(
     sio: socketio.AsyncServer, db: AsyncSession, redis: Redis, streamer_id: int, from_streamer: bool, text: str
 ) -> None:
-    viewers_ids = await redis.zrange(f"streamers:{streamer_id}:viewers", 0, -1)
-    viewer_id = viewers_ids and int(viewers_ids[0])
-    if not viewers_ids:
+    viewer_id = await redis.hget("streamers:viewers", streamer_id)
+    if not viewer_id:
         logger.critical("Not found viewer id when seding message (streamer id: {})", streamer_id)
         return
 
