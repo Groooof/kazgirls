@@ -10,14 +10,19 @@ const token = Cookies.get('access_token')
 const route = useRoute()
 const streamerId = Number(route.params.id)
 
-const rtcConfig: RTCConfiguration = {
+const rtcConfigRelayOnly: RTCConfiguration = {
   iceServers: [
     {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credentials: 'openrelayproject'
-    }
-  ]
+      urls: [
+        "turn:turn00.natpro.ru:3478?transport=udp",
+        "turn:turn00.natpro.ru:3478?transport=tcp",
+        "turn:turn00.natpro.ru:5349?transport=tcp",
+      ],
+      username: "test_09",
+      credential: "test_09",
+    },
+  ],
+  iceTransportPolicy: "relay",
 }
 
 const socket = ref<Socket | null>(null)
