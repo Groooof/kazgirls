@@ -16,7 +16,7 @@ const rtcConfig: RTCConfiguration = {
       urls:  "stun:stun.l.google.com:19302"
     },
     {
-      urls: "turn:turn00.natpro.ru:3478",
+      urls: "turn:turn00.natpro.ru:5349",
       username: "test_09",
       credential: "test_09"
     }
