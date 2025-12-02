@@ -13,7 +13,7 @@ const streamerId = Number(route.params.id)
 const rtcConfig: RTCConfiguration = {
    iceServers: [
     {
-      urls: 'turn:openrelay.metered.ca:80',
+      urls: 'turn:openrelay.metered.ca:443',
       username: 'openrelayproject',
       credentials: 'openrelayproject'
     }
