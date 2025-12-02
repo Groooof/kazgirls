@@ -7,14 +7,20 @@ import { config } from '@/config'
 import Cookies from 'js-cookie'
 
 const token = Cookies.get('access_token')
-
 const route = useRoute()
 const streamerId = Number(route.params.id)
 
 const rtcConfig: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-  ],
+   iceServers: [
+    {
+      urls:  "stun:stun.l.google.com:19302"
+    },
+    {
+      urls: "turn:turn00.natpro.ru:3478",
+      username: "test_09",
+      credential: "test_09"
+    }
+  ]
 }
 
 const socket = ref<Socket | null>(null)

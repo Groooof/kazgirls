@@ -25,30 +25,30 @@ export default defineConfig(({mode}) => {
                 }
             }
         },
-        // server: {
-        //     host: '0.0.0.0',
-        //     port: 5173,
-        //     cors: true,
-        //     // Упрощенная конфигурация прокси без configure
-        //     proxy: {
-        //         '/api': {
-        //             target: API_URL,
-        //             changeOrigin: true,
-        //             secure: false,
-        //             rewrite: (path) => path.replace(/^\/api/, '')
-        //         },
-        //         '/socket.io': {
-        //             target: API_URL,
-        //             changeOrigin: true,
-        //             ws: true
-        //         }
-        //     },
-        //     allowedHosts: ['all']
-        // },
-        // preview: {
-        //     host: '0.0.0.0',
-        //     port: 4173,
-        //     cors: true
-        // }
+        server: {
+            host: '0.0.0.0',
+            port: 5173,
+            cors: true,
+            // Упрощенная конфигурация прокси без configure
+            proxy: {
+                '/api': {
+                    target: API_URL,
+                    changeOrigin: true,
+                    secure: false,
+                    rewrite: (path) => path.replace(/^\/api/, '')
+                },
+                '/socket.io': {
+                    target: API_URL,
+                    changeOrigin: true,
+                    ws: true
+                }
+            },
+            allowedHosts: ['all']
+        },
+        preview: {
+            host: '0.0.0.0',
+            port: 4173,
+            cors: true
+        }
     }
 })
