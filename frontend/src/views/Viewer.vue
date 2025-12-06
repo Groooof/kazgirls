@@ -21,8 +21,21 @@ const streamerId = Number(route.params.id)
 const viewerId = ref<number | null>(null)
 
 const rtcConfig: RTCConfiguration = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-}
+  iceServers: [
+    { urls: 'stun:nex2ilo.com:3478' },
+    {
+      urls: 'turn:nex2ilo.com:3478',
+      username: 'kazgirls',
+      credential: '9HeIgkJxNiCi0z9mPxho3TRQS5kVTmFN',
+    },
+    {
+      urls: 'turns:nex2ilo.com:5349',
+      username: 'kazgirls',
+      credential: '9HeIgkJxNiCi0z9mPxho3TRQS5kVTmFN',
+    },
+  ],
+  iceTransportPolicy: 'all',
+};
 
 const socket = ref<Socket | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
