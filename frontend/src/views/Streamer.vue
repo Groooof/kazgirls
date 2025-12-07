@@ -27,11 +27,12 @@ const rtcConfig: RTCConfiguration = {
       credential: '9HeIgkJxNiCi0z9mPxho3TRQS5kVTmFN',
     },
   ],
-  iceTransportPolicy: 'all',
+  iceTransportPolicy: 'relay',
 };
 
 const socket = ref<Socket | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
+const pendingViewerCandidates: RTCIceCandidateInit[] = []
 
 const localStream = ref<MediaStream | null>(null)
 // опционально — чтобы видеть, что прилетает обратно (для отладки)
@@ -131,7 +132,8 @@ const initSocket = () => {
   socket.value = io(`${config.url}/streamers`, {
     auth: { token },
     autoConnect: true,
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
+    reconnection: true,
   })
 
   setInterval(() => {
@@ -165,13 +167,24 @@ const initSocket = () => {
 
 
   // ice-кандидаты от Viewer
-  socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
+  socket.value.on('webrtc:answer', async (payload) => {
     if (payload.streamerId !== streamerId) return
     if (!pc.value) return
-    try {
-      await pc.value.addIceCandidate(new RTCIceCandidate(payload.candidate))
-    } catch (e) {
-      console.error('Error adding ICE candidate', e)
+
+    await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+
+    // 👉 применяем накопленные ICE
+    for (const c of pendingViewerCandidates) {
+      try {
+        await pc.value.addIceCandidate(new RTCIceCandidate(c))
+      } catch (e) {
+        console.error('Error adding queued ICE cand (streamer)', e)
+      }
+    }
+    pendingViewerCandidates.length = 0
+
+    if (viewerId.value) {
+      loadChatHistory()
     }
   })
 

@@ -34,11 +34,12 @@ const rtcConfig: RTCConfiguration = {
       credential: '9HeIgkJxNiCi0z9mPxho3TRQS5kVTmFN',
     },
   ],
-  iceTransportPolicy: 'all',
+  iceTransportPolicy: 'relay',
 };
 
 const socket = ref<Socket | null>(null)
 const pc = ref<RTCPeerConnection | null>(null)
+const pendingRemoteCandidates: RTCIceCandidateInit[] = []
 
 const remoteStream = ref<MediaStream | null>(null)
 const isSocketConnected = ref(false)
@@ -252,6 +253,16 @@ const handleOffer = async (offer: RTCSessionDescriptionInit) => {
   await pc.value.setRemoteDescription(new RTCSessionDescription(offer))
   console.log('[VIEWER] setRemoteDescription done')
 
+  // 👉 после установки remoteDescription — применяем накопленные кандидаты
+  for (const c of pendingRemoteCandidates) {
+    try {
+      await pc.value.addIceCandidate(new RTCIceCandidate(c))
+    } catch (e) {
+      console.error('Error adding queued ICE candidate (viewer)', e)
+    }
+  }
+  pendingRemoteCandidates.length = 0
+
   const answer = await pc.value.createAnswer()
   console.log('[VIEWER] createAnswer done')
 
@@ -347,15 +358,22 @@ const initSocket = () => {
     },
   )
 
-  socket.value.on('webrtc:ice', async (payload: { streamerId: number; candidate: RTCIceCandidateInit }) => {
+  socket.value.on('webrtc:ice', async (payload) => {
     console.log('[VIEWER] webrtc:ice received', payload)
     if (payload.streamerId !== streamerId) return
-    if (!pc.value) {
-      console.warn('[VIEWER] got ICE but no pc, ignoring')
+
+    const candidateInit = payload.candidate
+    if (!candidateInit) return
+
+    // если pc ещё нет или remoteDescription ещё не выставлен — складываем в очередь
+    if (!pc.value || !pc.value.remoteDescription) {
+      console.log('[VIEWER] queue remote ICE')
+      pendingRemoteCandidates.push(candidateInit)
       return
     }
+
     try {
-      await pc.value.addIceCandidate(new RTCIceCandidate(payload.candidate))
+      await pc.value.addIceCandidate(new RTCIceCandidate(candidateInit))
     } catch (e) {
       console.error('Error adding ICE candidate (viewer)', e)
     }
