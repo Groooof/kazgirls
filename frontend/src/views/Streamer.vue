@@ -177,6 +177,13 @@ function initSocket() {
       return
     }
 
+    try {
+      await pc.value.setRemoteDescription(new RTCSessionDescription(data))
+      console.log('setRemoteDescription(answer) OK')
+    } catch (e) {
+      console.error('setRemoteDescription(answer) error', e)
+    }
+
     for (const c of pendingIceCandidates) {
       try {
         await pc.value.addIceCandidate(new RTCIceCandidate(c))
@@ -186,13 +193,6 @@ function initSocket() {
       }
     }
     pendingIceCandidates.length = 0
-
-    try {
-      await pc.value.setRemoteDescription(new RTCSessionDescription(data))
-      console.log('setRemoteDescription(answer) OK')
-    } catch (e) {
-      console.error('setRemoteDescription(answer) error', e)
-    }
   })
 
   socket.value.on('webrtc:ice', async (data) => {
