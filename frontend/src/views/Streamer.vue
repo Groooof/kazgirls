@@ -27,7 +27,7 @@ const rtcConfig: RTCConfiguration = {
       credential: '9HeIgkJxNiCi0z9mPxho3TRQS5kVTmFN',
     },
   ],
-  iceTransportPolicy: 'relay',
+  iceTransportPolicy: 'all',
 };
 
 const socket = ref<Socket | null>(null)
@@ -132,8 +132,7 @@ const initSocket = () => {
   socket.value = io(`${config.url}/streamers`, {
     auth: { token },
     autoConnect: true,
-    transports: ['websocket', 'polling'],
-    reconnection: true,
+    transports: ['websocket'],
   })
 
   setInterval(() => {

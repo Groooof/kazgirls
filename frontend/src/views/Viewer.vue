@@ -34,7 +34,7 @@ const rtcConfig: RTCConfiguration = {
       credential: '9HeIgkJxNiCi0z9mPxho3TRQS5kVTmFN',
     },
   ],
-  iceTransportPolicy: 'relay',
+  iceTransportPolicy: 'all',
 };
 
 const socket = ref<Socket | null>(null)
