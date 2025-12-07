@@ -29,9 +29,12 @@ async def disconnect_viewer(sio: socketio.AsyncServer, redis: Redis, viewer_id: 
             pipe.hget("streamers:sid", streamer_id)
             *_, streamer_sid = await pipe.execute()
 
+            if streamer_sid:
+                await sio.emit(
+                    "viewers:disconnected", {"reason": reason}, to=streamer_sid, namespace=namespaces.streamers
+                )
             await sio.emit("streamers:free", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
             await sio.emit("viewers:disconnected", {"reason": reason}, to=sid, namespace=namespaces.streamers)
-            await sio.emit("viewers:disconnected", {"reason": reason}, to=streamer_sid, namespace=namespaces.streamers)
             await sio.disconnect(sid, namespaces.streamers)
 
 
@@ -52,9 +55,12 @@ async def connect_viewer(sio: socketio.AsyncServer, redis: Redis, viewer_id: int
         pipe.hget("streamers:sid", streamer_id)
         *_, streamer_sid = await pipe.execute()
 
+        if streamer_sid:
+            await sio.emit(
+                "viewers:connected", {"viewer_id": viewer_id}, to=streamer_sid, namespace=namespaces.streamers
+            )
+
         await sio.emit("streamers:busy", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
-        await sio.emit("viewers:connected", {"viewer_id": viewer_id}, to=streamer_sid, namespace=namespaces.streamers)
-        await sio.emit("viewers:connected", to=sid, namespace=namespaces.streamers)
 
 
 async def ping_viewer(redis: Redis, viewer_id: int) -> None:

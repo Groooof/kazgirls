@@ -45,11 +45,15 @@ async def connect_streamer(sio: socketio.AsyncServer, redis: Redis, streamer_id:
         pipe = redis.pipeline()
         pipe.zadd("streamers:online", {streamer_id: now_ts})
         pipe.hset("streamers:sid", streamer_id, sid)
-        await pipe.execute()
+        pipe.hget("streamers:viewers", streamer_id)
+        *_, viewer_id = await pipe.execute()
 
-        # TODO: кидать ивент зрителю
+        if viewer_id:
+            viewer_sid = await redis.hget("viewers:sid", viewer_id)
+        if viewer_id and viewer_sid:
+            await sio.emit("streamers:connected", to=viewer_sid, namespace=namespaces.streamers)
+
         await sio.emit("streamers:connected", {"streamer_id": streamer_id}, namespace=namespaces.lobby)
-        await sio.emit("streamers:connected", to=sid, namespace=namespaces.lobby)
 
 
 async def ping_streamer(redis: Redis, streamer_id: int) -> None:
