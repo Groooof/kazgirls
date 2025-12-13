@@ -5,7 +5,7 @@ import { config } from '@/config'
 import Cookies from 'js-cookie'
 import { useRoute } from 'vue-router'
 
-import { ref, shallowRef, onBeforeUnmount } from 'vue'
+import { ref, shallowRef, onBeforeUnmount, watch } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 
 type Me = {
@@ -178,9 +178,15 @@ function createPeerConnection() {
       streams: event.streams.map(s => s.id),
     })
 
-    const stream = event.streams[0] ?? remoteStream.value ?? new MediaStream()
-    remoteStream.value = stream
-    if (remoteVideo.value) remoteVideo.value.srcObject = stream
+    if (event.streams[0]) {
+      remoteStream.value = event.streams[0]
+    } else {
+      // 2) иначе сами собираем stream из track’ов
+      if (!remoteStream.value) remoteStream.value = new MediaStream()
+      remoteStream.value.addTrack(event.track)
+    }
+
+    attachRemote()
   }
 
   // Viewer в режиме “только принимать”.
@@ -209,6 +215,25 @@ function stop() {
     log('socket disconnected')
   }
 }
+
+function attachRemote() {
+  const el = remoteVideo.value
+  const stream = remoteStream.value
+  if (!el || !stream) return
+
+  el.srcObject = stream
+
+  // ВАЖНО: чтобы autoplay почти всегда работал — сначала muted
+  el.muted = true
+  el.playsInline = true
+  el.autoplay = true
+
+  el.play()
+    .then(() => log('remoteVideo.play() OK'))
+    .catch((e) => log('remoteVideo.play() BLOCKED', String(e)))
+}
+
+watch(remoteVideo, () => attachRemote())
 
 onBeforeUnmount(stop)
 
