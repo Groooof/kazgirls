@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
-import { io, Socket } from 'socket.io-client'
+
 import VideoPlayer from './VideoPlayer.vue'
 import { config } from '@/config'
+
+
+import { ref, shallowRef, onBeforeUnmount } from 'vue'
+import { io, type Socket } from 'socket.io-client'
+import { useRoute } from 'vue-router'
 import Cookies from 'js-cookie'
 
 const token = Cookies.get('access_token')
 
-const route = useRoute()
-const streamerId = Number(route.params.id)
-const viewerId = ref<number | null>(null)
+// const route = useRoute()
+// const streamerId = Number(route.params.id)
+// const viewerId = ref<number | null>(null)
 
 const rtcConfig: RTCConfiguration = {
   iceServers: [
@@ -28,326 +31,534 @@ const rtcConfig: RTCConfiguration = {
     },
   ],
   iceTransportPolicy: 'all',
-};
-
-const socket = ref<Socket | null>(null)
-const pc = ref<RTCPeerConnection | null>(null)
-const pendingViewerCandidates: RTCIceCandidateInit[] = []
-
-const localStream = ref<MediaStream | null>(null)
-// опционально — чтобы видеть, что прилетает обратно (для отладки)
-const remoteStream = ref<MediaStream | null>(null)
-
-const isStreaming = ref(false)
-const isSocketConnected = ref(false)
-
-/** ----- ЧАТ ----- */
-
-interface ChatMessage {
-  created: string
-  from_streamer: boolean
-  text: string
 }
 
-const chatMessagesEl = ref<HTMLElement | null>(null)
+/** ===== types ===== */
+type OfferMsg = RTCSessionDescriptionInit
+type AnswerMsg = RTCSessionDescriptionInit
+type IceMsg = RTCIceCandidateInit
 
-const scrollChatToBottom = async () => {
-  await nextTick()
-  const el = chatMessagesEl.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
+type ServerToClientEvents = {
+  'webrtc:answer': (sdp: AnswerMsg) => void
+  'webrtc:ice': (candidate: IceMsg) => void
+}
+type ClientToServerEvents = {
+  'webrtc:offer': (sdp: OfferMsg) => void
+  'webrtc:ice': (candidate: IceMsg) => void
 }
 
-const chatMessages = ref<ChatMessage[]>([])
-const chatInput = ref('')
-const isChatLoading = ref(false)
-const isChatSending = ref(false)
+/** ===== ui refs ===== */
+const localVideo = ref<HTMLVideoElement | null>(null)
 
-const formatTime = (iso: string) => {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+/** ===== state ===== */
+const socket = shallowRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null)
+const pc = shallowRef<RTCPeerConnection | null>(null)
+const localStream = shallowRef<MediaStream | null>(null)
+
+const logs = ref<string[]>([])
+const log = (m: string, data?: unknown) => {
+  const line = `[Streamer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''}`
+  logs.value.unshift(line)
+  console.log(line)
+}
+const safeJson = (v: unknown) => {
+  try { return JSON.stringify(v) } catch { return String(v) }
 }
 
-const loadChatHistory = async () => {
-  // история нужна только когда стрим идёт и мы знаем viewerId
-  if (!viewerId.value) return
+/** ===== socket ===== */
+function connectSocket() {
+  if (socket.value) return
 
-  isChatLoading.value = true
-  try {
-    const params = new URLSearchParams({
-      streamer_id: String(streamerId),
-      viewer_id: String(viewerId.value),
-    })
-
-    const { data } = await axios.get(
-      `${config.url}${config.apiUrl}/messages`,
-      {
-        params,
-        withCredentials: true,
-      },
-    )
-
-    chatMessages.value = Array.isArray(data) ? data : []
-
-    await scrollChatToBottom()
-  } catch (e) {
-    console.error('[STREAMER] loadChatHistory error', e)
-  } finally {
-    isChatLoading.value = false
-  }
-}
-
-const sendChatMessage = async () => {
-  const text = chatInput.value.trim()
-  if (!text || !socket.value || !isSocketConnected.value || !isStreaming.value) return
-
-  isChatSending.value = true
-  try {
-    // локально добавляем сообщение стримера
-    const now = new Date().toISOString()
-    const localMsg: ChatMessage = {
-      created: now,
-      from_streamer: true,
-      text,
-    }
-    chatMessages.value.push(localMsg)
-    await scrollChatToBottom()
-
-    socket.value.emit('message', { text })
-    chatInput.value = ''
-  } catch (e) {
-    console.error('[STREAMER] sendChatMessage error', e)
-  } finally {
-    isChatSending.value = false
-  }
-}
-
-/** ----- /ЧАТ ----- */
-
-const initSocket = () => {
-  socket.value = io(`${config.url}/streamers`, {
+  log('connectSocket()')
+  const s = io(`${config.url}/streamers`, {
     auth: { token },
     autoConnect: true,
     transports: ['websocket'],
   })
+  socket.value = s
 
-  setInterval(() => {
-    try { socket.emit('ping', {}) } catch (_) {}
-  }, 20000)
+  s.on('connect', () => log(`socket connected id=${s.id}`))
+  s.on('disconnect', (r) => log(`socket disconnected reason=${r}`))
 
-  socket.value.on('connect', () => {
-    isSocketConnected.value = true
+  s.on('webrtc:answer', async (answer) => {
+    log('<= webrtc:answer', answer)
+    const conn = pc.value
+    if (!conn) return log('pc is null, ignore answer')
+
+    await conn.setRemoteDescription(answer)
+    log('setRemoteDescription(answer) done')
   })
 
-  socket.value.on('disconnect', () => {
-    isSocketConnected.value = false
-  })
+  s.on('webrtc:ice', async (candidate) => {
+    log('<= webrtc:ice', candidate)
+    const conn = pc.value
+    if (!conn) return log('pc is null, ignore ice')
 
-  // ответ от Viewer
-  socket.value.on(
-    'webrtc:answer',
-    async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit }) => {
-      if (payload.streamerId !== streamerId) return
-      if (!pc.value) return
-
-      await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
-
-      // 🔥 зритель нажал "Подключиться к стриму" → прилетел answer
-      // viewerId к этому моменту мы уже получили из webrtc:offer (без sdp)
-      if (viewerId.value) {
-        loadChatHistory()
-      }
-    },
-  )
-
-
-  // ice-кандидаты от Viewer
-  socket.value.on('webrtc:answer', async (payload) => {
-    if (payload.streamerId !== streamerId) return
-    if (!pc.value) return
-
-    await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
-
-    // 👉 применяем накопленные ICE
-    for (const c of pendingViewerCandidates) {
-      try {
-        await pc.value.addIceCandidate(new RTCIceCandidate(c))
-      } catch (e) {
-        console.error('Error adding queued ICE cand (streamer)', e)
-      }
+    try {
+      await conn.addIceCandidate(candidate)
+      log('addIceCandidate(remote) done')
+    } catch (e) {
+      log('addIceCandidate(remote) ERROR', String(e))
     }
-    pendingViewerCandidates.length = 0
-
-    if (viewerId.value) {
-      loadChatHistory()
-    }
-  })
-
-  // 🔥 ВАЖНО: отличаем запрос (без sdp) от обычного оффера (со sdp)
-  socket.value.on(
-    'webrtc:offer',
-    async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit; viewerId?: number }) => {
-      console.log('[STREAMER] webrtc:offer received', payload)
-
-      if (payload.streamerId !== streamerId) return
-
-      // если есть sdp — это либо наш же broadcast, либо не "запрос" от viewer → игнорим
-      if (payload.sdp) {
-        return
-      }
-
-      console.log(payload)
-
-      // 👇 здесь как раз "запрос" от зрителя (без sdp)
-      if (payload.viewerId) {
-        console.log(payload.viewerId)
-        viewerId.value = payload.viewerId
-        console.log('[STREAMER] viewerId установлен =', viewerId.value)
-
-        loadChatHistory()
-      }
-
-      if (!pc.value) {
-        console.warn('[STREAMER] got offer-request but no pc (stream not started)')
-        return
-      }
-
-      try {
-        const newOffer = await pc.value.createOffer({ iceRestart: true } as RTCOfferOptions)
-        await pc.value.setLocalDescription(newOffer)
-
-        socket.value?.emit('webrtc:offer', {
-          streamerId,
-          sdp: newOffer,
-        })
-        console.log('[STREAMER] sent refreshed offer to viewer')
-      } catch (e) {
-        console.error('[STREAMER] error handling offer-request', e)
-      }
-    },
-  )
-
-  // 🔔 сообщения чата
-  socket.value.on('message', async(msg: ChatMessage) => {
-    if (!msg || typeof msg.text !== 'string') return
-    chatMessages.value.push(msg)
-    await scrollChatToBottom()
   })
 }
 
-const getLocalMedia = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: {
-        echoCancellation: { ideal: true },
-        noiseSuppression: { ideal: true },
-        autoGainControl: { ideal: true },
-      },
-    })
-    localStream.value = stream
-  } catch (e) {
-    console.error('Error accessing media devices', e)
+/** ===== webrtc ===== */
+async function start() {
+  log('start(): getUserMedia')
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+  localStream.value = stream
+  if (localVideo.value) localVideo.value.srcObject = stream
+  log('local stream ready', {
+    tracks: stream.getTracks().map(t => ({ kind: t.kind, id: t.id, enabled: t.enabled })),
+  })
+
+  log('create RTCPeerConnection', rtcConfig)
+  const conn = new RTCPeerConnection(rtcConfig)
+  pc.value = conn
+
+  conn.onicegatheringstatechange = () => log(`iceGatheringState=${conn.iceGatheringState}`)
+  conn.oniceconnectionstatechange = () => log(`iceConnectionState=${conn.iceConnectionState}`)
+  conn.onconnectionstatechange = () => log(`connectionState=${conn.connectionState}`)
+  conn.onsignalingstatechange = () => log(`signalingState=${conn.signalingState}`)
+
+  conn.onicecandidate = (e) => {
+    if (!e.candidate) {
+      log('onicecandidate: null (gathering complete)')
+      return
+    }
+    const msg: IceMsg = e.candidate.toJSON()
+    log('=> webrtc:ice', msg)
+    socket.value?.emit('webrtc:ice', msg)
   }
+
+  // Streamer отправляет свои треки
+  for (const track of stream.getTracks()) {
+    conn.addTrack(track, stream)
+    log('addTrack()', { kind: track.kind, id: track.id })
+  }
+
+  // делаем offer и шлём
+  if (!socket.value) log('WARNING: socket is not connected yet (call connectSocket())')
+
+  log('createOffer()')
+  const offer = await conn.createOffer()
+  await conn.setLocalDescription(offer)
+  log('setLocalDescription(offer) done', conn.localDescription)
+
+  const payload: OfferMsg = conn.localDescription!
+  log('=> webrtc:offer', payload)
+  socket.value?.emit('webrtc:offer', payload)
 }
 
-const createPeerConnection = () => {
-  pc.value = new RTCPeerConnection(rtcConfig)
+/** ===== cleanup ===== */
+function stop() {
+  log('stop()')
 
-  // отправка ICE-кандидатов на сервер
-  pc.value.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.value?.emit('webrtc:ice', {
-        streamerId,
-        candidate: event.candidate.toJSON(),
-        from: 'streamer',
-      })
-    }
+  if (pc.value) {
+    pc.value.close()
+    pc.value = null
+    log('pc closed')
   }
 
-  pc.value.onconnectionstatechange = () => {
-    console.log('[STREAMER] connection state:', pc.value?.connectionState)
-  }
-
-  // если стример тоже будет что-то получать (обычно не надо)
-  pc.value.ontrack = (event) => {
-    if (!remoteStream.value) {
-      remoteStream.value = new MediaStream()
-    }
-    remoteStream.value.addTrack(event.track)
-  }
-
-  // добавляем свои треки
   if (localStream.value) {
-    localStream.value.getTracks().forEach((track) => {
-      pc.value?.addTrack(track, localStream.value as MediaStream)
-    })
+    localStream.value.getTracks().forEach(t => t.stop())
+    localStream.value = null
+    log('local tracks stopped')
+  }
+
+  if (localVideo.value) localVideo.value.srcObject = null
+
+  if (socket.value) {
+    socket.value.disconnect()
+    socket.value = null
+    log('socket disconnected')
   }
 }
 
-const startStream = async () => {
-  console.log('[STREAMER] startStream clicked')
+onBeforeUnmount(stop)
 
-  if (!socket.value || !isSocketConnected.value) {
-    console.warn('[STREAMER] Socket not ready')
-    return
-  }
-  if (!localStream.value) {
-    console.log('[STREAMER] getLocalMedia...')
-    await getLocalMedia()
-  }
+//
 
-  console.log('[STREAMER] createPeerConnection')
-  createPeerConnection()
+// const sStream = ref<MediaStream | null>(null)
+// const sLocalVideo = useTemplateRef('sLocalVideo')
 
-  if (!pc.value) return
+// const sPeerConnection = ref<RTCPeerConnection | null>(null)
 
-  console.log('[STREAMER] createOffer...')
-  const offer = await pc.value.createOffer()
-  console.log('[STREAMER] setLocalDescription...')
-  await pc.value.setLocalDescription(offer)
+// const sStart = async () => {
+//   try {
+//     sStream.value = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+  
+//     if (sLocalVideo.value) {
+//       sLocalVideo.value.srcObject = sStream.value
+//     }
 
-  console.log('[STREAMER] emit webrtc_offer', { streamerId })
-  socket.value.emit('webrtc:offer', {
-    streamerId,
-    sdp: offer,
-  })
+//     sPeerConnection.value = new RTCPeerConnection({
+//       iceServers: rtcConfig.iceServers
+//     })
 
-  isStreaming.value = true
-}
+//     const tracks = sStream.value.getTracks()
 
-const stopStream = () => {
-  isStreaming.value = false
+//     const pc = sPeerConnection.value
 
-  pc.value?.getSenders().forEach((sender) => sender.track?.stop())
-  pc.value?.close()
-  pc.value = null
+//     if (!pc) return
 
-  localStream.value?.getTracks().forEach((t) => t.stop())
-  localStream.value = null
+//     tracks.forEach((track) => {
+//       pc.addTrack(track)
+//     })
 
-  // при остановке стрима зачистим чат (опционально)
-  chatMessages.value = []
-}
+//     pc.ontrack = (event) => {
+//       console.log(event)
+//     }
 
-onMounted(async () => {
-  initSocket()
+//     console.log(tracks)
+//   } catch (err) {
+//     console.error(err)
+//   }
+// }
 
-  await getLocalMedia()
-})
+// sStart()
 
-onBeforeUnmount(() => {
-  stopStream()
-  socket.value?.disconnect()
-})
+//
+
+
+// const socket = ref<Socket | null>(null)
+// const pc = ref<RTCPeerConnection | null>(null)
+// const pendingViewerCandidates: RTCIceCandidateInit[] = []
+
+// const localStream = ref<MediaStream | null>(null)
+// // опционально — чтобы видеть, что прилетает обратно (для отладки)
+// const remoteStream = ref<MediaStream | null>(null)
+
+// const isStreaming = ref(false)
+// const isSocketConnected = ref(false)
+
+// /** ----- ЧАТ ----- */
+
+// interface ChatMessage {
+//   created: string
+//   from_streamer: boolean
+//   text: string
+// }
+
+// const chatMessagesEl = ref<HTMLElement | null>(null)
+
+// const scrollChatToBottom = async () => {
+//   await nextTick()
+//   const el = chatMessagesEl.value
+//   if (!el) return
+//   el.scrollTop = el.scrollHeight
+// }
+
+// const chatMessages = ref<ChatMessage[]>([])
+// const chatInput = ref('')
+// const isChatLoading = ref(false)
+// const isChatSending = ref(false)
+
+// const formatTime = (iso: string) => {
+//   const d = new Date(iso)
+//   if (Number.isNaN(d.getTime())) return ''
+//   return d.toLocaleTimeString(undefined, {
+//     hour: '2-digit',
+//     minute: '2-digit',
+//   })
+// }
+
+// const loadChatHistory = async () => {
+//   // история нужна только когда стрим идёт и мы знаем viewerId
+//   if (!viewerId.value) return
+
+//   isChatLoading.value = true
+//   try {
+//     const params = new URLSearchParams({
+//       streamer_id: String(streamerId),
+//       viewer_id: String(viewerId.value),
+//     })
+
+//     const { data } = await axios.get(
+//       `${config.url}${config.apiUrl}/messages`,
+//       {
+//         params,
+//         withCredentials: true,
+//       },
+//     )
+
+//     chatMessages.value = Array.isArray(data) ? data : []
+
+//     await scrollChatToBottom()
+//   } catch (e) {
+//     console.error('[STREAMER] loadChatHistory error', e)
+//   } finally {
+//     isChatLoading.value = false
+//   }
+// }
+
+// const sendChatMessage = async () => {
+//   const text = chatInput.value.trim()
+//   if (!text || !socket.value || !isSocketConnected.value || !isStreaming.value) return
+
+//   isChatSending.value = true
+//   try {
+//     // локально добавляем сообщение стримера
+//     const now = new Date().toISOString()
+//     const localMsg: ChatMessage = {
+//       created: now,
+//       from_streamer: true,
+//       text,
+//     }
+//     chatMessages.value.push(localMsg)
+//     await scrollChatToBottom()
+
+//     socket.value.emit('message', { text })
+//     chatInput.value = ''
+//   } catch (e) {
+//     console.error('[STREAMER] sendChatMessage error', e)
+//   } finally {
+//     isChatSending.value = false
+//   }
+// }
+
+// /** ----- /ЧАТ ----- */
+
+// const initSocket = () => {
+//   socket.value = io(`${config.url}/streamers`, {
+//     auth: { token },
+//     autoConnect: true,
+//     transports: ['websocket'],
+//   })
+
+//   setInterval(() => {
+//     try { socket.emit('ping', {}) } catch (_) {}
+//   }, 20000)
+
+//   socket.value.on('connect', () => {
+//     isSocketConnected.value = true
+//   })
+
+//   socket.value.on('disconnect', () => {
+//     isSocketConnected.value = false
+//   })
+
+//   // ответ от Viewer
+//   socket.value.on(
+//     'webrtc:answer',
+//     async (payload: { streamerId: number; sdp: RTCSessionDescriptionInit }) => {
+//       if (payload.streamerId !== streamerId) return
+//       if (!pc.value) return
+
+//       await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+
+//       // 🔥 зритель нажал "Подключиться к стриму" → прилетел answer
+//       // viewerId к этому моменту мы уже получили из webrtc:offer (без sdp)
+//       if (viewerId.value) {
+//         loadChatHistory()
+//       }
+//     },
+//   )
+
+
+//   // ice-кандидаты от Viewer
+//   socket.value.on('webrtc:answer', async (payload) => {
+//     if (payload.streamerId !== streamerId) return
+//     if (!pc.value) return
+
+//     await pc.value.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+
+//     // 👉 применяем накопленные ICE
+//     for (const c of pendingViewerCandidates) {
+//       try {
+//         await pc.value.addIceCandidate(new RTCIceCandidate(c))
+//       } catch (e) {
+//         console.error('Error adding queued ICE cand (streamer)', e)
+//       }
+//     }
+//     pendingViewerCandidates.length = 0
+
+//     if (viewerId.value) {
+//       loadChatHistory()
+//     }
+//   })
+
+//   // 🔥 ВАЖНО: отличаем запрос (без sdp) от обычного оффера (со sdp)
+//   socket.value.on(
+//     'webrtc:offer',
+//     async (payload: { streamerId: number; sdp?: RTCSessionDescriptionInit; viewerId?: number }) => {
+//       console.log('[STREAMER] webrtc:offer received', payload)
+
+//       if (payload.streamerId !== streamerId) return
+
+//       // если есть sdp — это либо наш же broadcast, либо не "запрос" от viewer → игнорим
+//       if (payload.sdp) {
+//         return
+//       }
+
+//       console.log(payload)
+
+//       // 👇 здесь как раз "запрос" от зрителя (без sdp)
+//       if (payload.viewerId) {
+//         console.log(payload.viewerId)
+//         viewerId.value = payload.viewerId
+//         console.log('[STREAMER] viewerId установлен =', viewerId.value)
+
+//         loadChatHistory()
+//       }
+
+//       if (!pc.value) {
+//         console.warn('[STREAMER] got offer-request but no pc (stream not started)')
+//         return
+//       }
+
+//       try {
+//         const newOffer = await pc.value.createOffer({ iceRestart: true } as RTCOfferOptions)
+//         await pc.value.setLocalDescription(newOffer)
+
+//         socket.value?.emit('webrtc:offer', {
+//           streamerId,
+//           sdp: newOffer,
+//         })
+//         console.log('[STREAMER] sent refreshed offer to viewer')
+//       } catch (e) {
+//         console.error('[STREAMER] error handling offer-request', e)
+//       }
+//     },
+//   )
+
+//   // 🔔 сообщения чата
+//   socket.value.on('message', async(msg: ChatMessage) => {
+//     if (!msg || typeof msg.text !== 'string') return
+//     chatMessages.value.push(msg)
+//     await scrollChatToBottom()
+//   })
+// }
+
+// const getLocalMedia = async () => {
+//   try {
+//     const stream = await navigator.mediaDevices.getUserMedia({
+//       video: true,
+//       audio: {
+//         echoCancellation: { ideal: true },
+//         noiseSuppression: { ideal: true },
+//         autoGainControl: { ideal: true },
+//       },
+//     })
+//     localStream.value = stream
+//   } catch (e) {
+//     console.error('Error accessing media devices', e)
+//   }
+// }
+
+// const createPeerConnection = () => {
+//   pc.value = new RTCPeerConnection(rtcConfig)
+
+//   // отправка ICE-кандидатов на сервер
+//   pc.value.onicecandidate = (event) => {
+//     if (event.candidate) {
+//       socket.value?.emit('webrtc:ice', {
+//         streamerId,
+//         candidate: event.candidate.toJSON(),
+//         from: 'streamer',
+//       })
+//     }
+//   }
+
+//   pc.value.onconnectionstatechange = () => {
+//     console.log('[STREAMER] connection state:', pc.value?.connectionState)
+//   }
+
+//   // если стример тоже будет что-то получать (обычно не надо)
+//   pc.value.ontrack = (event) => {
+//     if (!remoteStream.value) {
+//       remoteStream.value = new MediaStream()
+//     }
+//     remoteStream.value.addTrack(event.track)
+//   }
+
+//   // добавляем свои треки
+//   if (localStream.value) {
+//     localStream.value.getTracks().forEach((track) => {
+//       pc.value?.addTrack(track, localStream.value as MediaStream)
+//     })
+//   }
+// }
+
+// const startStream = async () => {
+//   console.log('[STREAMER] startStream clicked')
+
+//   if (!socket.value || !isSocketConnected.value) {
+//     console.warn('[STREAMER] Socket not ready')
+//     return
+//   }
+//   if (!localStream.value) {
+//     console.log('[STREAMER] getLocalMedia...')
+//     await getLocalMedia()
+//   }
+
+//   console.log('[STREAMER] createPeerConnection')
+//   createPeerConnection()
+
+//   if (!pc.value) return
+
+//   console.log('[STREAMER] createOffer...')
+//   const offer = await pc.value.createOffer()
+//   console.log('[STREAMER] setLocalDescription...')
+//   await pc.value.setLocalDescription(offer)
+
+//   console.log('[STREAMER] emit webrtc_offer', { streamerId })
+//   socket.value.emit('webrtc:offer', {
+//     streamerId,
+//     sdp: offer,
+//   })
+
+//   isStreaming.value = true
+// }
+
+// const stopStream = () => {
+//   isStreaming.value = false
+
+//   pc.value?.getSenders().forEach((sender) => sender.track?.stop())
+//   pc.value?.close()
+//   pc.value = null
+
+//   localStream.value?.getTracks().forEach((t) => t.stop())
+//   localStream.value = null
+
+//   // при остановке стрима зачистим чат (опционально)
+//   chatMessages.value = []
+// }
+
+// onMounted(async () => {
+//   initSocket()
+
+//   await getLocalMedia()
+// })
+
+// onBeforeUnmount(() => {
+//   stopStream()
+//   socket.value?.disconnect()
+// })
 </script>
 
 <template>
-  <div class="streamer-page">
+  <div style="display:grid; gap:12px; max-width: 980px;">
+    <h2>Streamer</h2>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button @click="connectSocket">1 Connect socket</button>
+      <button @click="start">2 Start + Send Offer</button>
+      <button @click="stop">Stop</button>
+    </div>
+
+    <video ref="localVideo" autoplay playsinline muted style="width:420px; background:#111;"></video>
+
+    <details open>
+      <summary>Logs</summary>
+      <pre style="white-space:pre-wrap; background:#0b0b0b; color:#ddd; padding:12px; border-radius:8px; max-height:320px; overflow:auto;">{{ logs.join('\n') }}</pre>
+    </details>
+  </div>
+
+  <!-- <video ref="sLocalVideo" autoplay playsinline muted style="width:320px; background:#111;"></video> -->
+  
+  <!-- <div class="streamer-page">
     <div class="streamer-card">
       <header class="streamer-header">
         <div>
@@ -396,7 +607,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- ЧАТ: показываем только когда стрим запущен -->
         <div v-if="isStreaming" class="chat-wrapper">
           <h2 class="chat-title">Чат</h2>
 
@@ -449,10 +659,9 @@ onBeforeUnmount(() => {
             </form>
           </div>
         </div>
-        <!-- /ЧАТ -->
       </div>
     </div>
-  </div>
+  </div> -->
 </template>
 
 <style scoped>
