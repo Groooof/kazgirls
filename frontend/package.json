@@ -15,6 +15,9 @@
     "beauty:check": "prettier --check src"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
     "@sentry/tracing": "^7.120.3",
     "@sentry/vue": "^9.22.0",
     "axios": "^1.13.2",

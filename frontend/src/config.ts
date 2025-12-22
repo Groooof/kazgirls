@@ -7,5 +7,5 @@ const isProd = true
 
 export const config: Config = {
   url: isProd ? '' : 'http://localhost:8000',
-  apiUrl: '/api/v1',
+  apiUrl: 'https://nex2ilo.com/api/v1',
 }
