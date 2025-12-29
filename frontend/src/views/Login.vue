@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import axios, { AxiosError } from 'axios'
 import Cookies from 'js-cookie'
 import { config } from '@/config'
+import { setToken } from './token'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,6 +35,8 @@ const login = async () => {
       expires: 7,
       sameSite: 'Lax',
     })
+
+    await setToken(data.access_token)
 
     // забираем информацию о себе
     const { data: me } = await axios.get(`${config.url}${config.apiUrl}/tokens/me`, {

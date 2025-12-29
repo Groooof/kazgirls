@@ -4,8 +4,9 @@ import { io, type Socket } from 'socket.io-client'
 import Cookies from 'js-cookie'
 import { config } from '@/config'
 import { useRoute } from 'vue-router'
+import { getToken } from './token'
 
-const token = Cookies.get('access_token')
+// const token = Cookies.get('access_token')
 const route = useRoute()
 const streamerId = Number(route.params.id) // если сервер использует query для роутинга
 
@@ -52,7 +53,7 @@ const localScreenStream = shallowRef<MediaStream | null>(null)
 const logs = ref<string[]>([])
 const safeJson = (v: unknown) => { try { return JSON.stringify(v) } catch { return String(v) } }
 const log = (m: string, data?: unknown) => {
-  const line = `[Viewer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''}`
+  const line = `[Viewer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''} ${window.location.href}`
   logs.value.unshift(line)
   console.log(line)
 }
@@ -93,18 +94,25 @@ function attachLocalScreenPreview() {
   el.play().catch(() => {})
 }
 
+const tok = ref()
+
+const test = ref()
 /** ===== socket ===== */
-function connectSocket() {
+const connectSocket = async() => {
   if (socket.value) return
   log('connectSocket()')
 
+  tok.value = await getToken()
+
   const s = io(`${config.url}/streamers`, {
-    auth: { token },
+    auth: { token: tok.value },
     autoConnect: true,
     query: { streamer_id: String(streamerId) }, // оставь если сервер так роутит
     transports: ['websocket'],
   })
   socket.value = s
+
+  test.value = s
 
   s.on('connect', () => log(`socket connected id=${s.id}`))
   s.on('disconnect', (r) => log(`socket disconnected reason=${r}`))
@@ -257,7 +265,9 @@ function stopAll() {
   if (socket.value) { socket.value.disconnect(); socket.value = null; log('socket disconnected') }
 }
 
-onMounted(connectSocket)
+onMounted(async() => {
+  await connectSocket()
+})
 onBeforeUnmount(stopAll)
 </script>
 

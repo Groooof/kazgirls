@@ -49,7 +49,7 @@ const remoteScreenStream = shallowRef<MediaStream | null>(null)
 const logs = ref<string[]>([])
 const safeJson = (v: unknown) => { try { return JSON.stringify(v) } catch { return String(v) } }
 const log = (m: string, data?: unknown) => {
-  const line = `[Streamer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''}`
+  const line = `[Streamer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''} ${window.location.href}`
   logs.value.unshift(line)
   console.log(line)
 }
