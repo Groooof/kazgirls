@@ -53,7 +53,7 @@ const localScreenStream = shallowRef<MediaStream | null>(null)
 const logs = ref<string[]>([])
 const safeJson = (v: unknown) => { try { return JSON.stringify(v) } catch { return String(v) } }
 const log = (m: string, data?: unknown) => {
-  const line = `[Viewer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''} ${window.location.href}`
+  const line = `[Viewer] ${new Date().toISOString()} ${m}${data ? ' ' + safeJson(data) : ''}`
   logs.value.unshift(line)
   console.log(line)
 }
@@ -96,7 +96,6 @@ function attachLocalScreenPreview() {
 
 const tok = ref()
 
-const test = ref()
 /** ===== socket ===== */
 const connectSocket = async() => {
   if (socket.value) return
@@ -108,11 +107,12 @@ const connectSocket = async() => {
     auth: { token: tok.value },
     autoConnect: true,
     query: { streamer_id: String(streamerId) }, // оставь если сервер так роутит
-    transports: ['websocket'],
+    transports: ['polling', 'websocket'],
   })
   socket.value = s
 
-  test.value = s
+  log('route', { href: window.location.href, params: route.params, streamerId })
+  log(tok.value)
 
   s.on('connect', () => log(`socket connected id=${s.id}`))
   s.on('disconnect', (r) => log(`socket disconnected reason=${r}`))
@@ -269,6 +269,23 @@ onMounted(async() => {
   await connectSocket()
 })
 onBeforeUnmount(stopAll)
+
+import { ScreenShare } from '@/native/screenShare'
+
+async function startScreenToStreamerV2() {
+  try {
+    log('startScreenToStreamer(): native ScreenShare.start()')
+    const res = await ScreenShare.start()
+    log('ScreenShare result', res)
+  } catch (e) {
+    log('ScreenShare error', String(e)) //
+    console.log(4)
+  }
+}
+
+const BUILD_ID = 'BUILD_' + new Date().toISOString()
+log('BUILD_ID', BUILD_ID)
+;(window as any).__BUILD_ID__ = BUILD_ID
 </script>
 
 <template>
@@ -277,7 +294,7 @@ onBeforeUnmount(stopAll)
 
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button @click="connectSocket">Connect socket</button>
-      <button @click="startScreenToStreamer">Start screen → streamer (v2s)</button>
+      <button @click="startScreenToStreamerV2">Start screen → streamer (v2s)</button>
       <button @click="stopAll">Stop</button>
     </div>
 
