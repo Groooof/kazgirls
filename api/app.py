@@ -32,7 +32,7 @@ from utils.libs import generate_error_responses
 from utils.middleware import TracemallocMiddleware
 
 origins = ["https://nex2ilo.com"]
-socketio_origins = ["*"]
+socketio_origins = origins + ["https://admin.socket.io"]
 
 
 class FastAPI(_FastAPI):
