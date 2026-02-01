@@ -17,20 +17,3 @@ const initApp = () => {
 }
 
 initApp()
-
-(async () => {
-  try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations()
-      for (const r of regs) await r.unregister()
-    }
-    if ('caches' in window) {
-      const keys = await caches.keys()
-      await Promise.all(keys.map(k => caches.delete(k)))
-    }
-    console.log('SW/cache cleared')
-  } catch (e) {
-    console.log('SW/cache clear error', e)
-  }
-})()
-

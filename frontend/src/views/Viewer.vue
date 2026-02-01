@@ -101,13 +101,16 @@ const connectSocket = async() => {
   if (socket.value) return
   log('connectSocket()')
 
-  tok.value = await getToken()
+  tok.value = Cookies.get('access_token') //await getToken()
 
   const s = io(`${config.url}/streamers`, {
     auth: { token: tok.value },
     autoConnect: true,
     query: { streamer_id: String(streamerId) }, // оставь если сервер так роутит
-    transports: ['polling', 'websocket'],
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: 10,
+    timeout: 10000,
   })
   socket.value = s
 
@@ -270,22 +273,50 @@ onMounted(async() => {
 })
 onBeforeUnmount(stopAll)
 
-import { ScreenShare } from '@/native/screenShare'
+import { registerPlugin, Capacitor } from '@capacitor/core'
+
+const ScreenShare = registerPlugin('ScreenShare')
 
 async function startScreenToStreamerV2() {
-  try {
-    log('startScreenToStreamer(): native ScreenShare.start()')
-    const res = await ScreenShare.start()
-    log('ScreenShare result', res)
-  } catch (e) {
-    log('ScreenShare error', String(e)) //
-    console.log(4)
+  log('Запускаем нативный ScreenShare...')
+  
+  // 1. Слушаем ICE кандидатов от Java и шлем их в сокет
+  ScreenShare.addListener('onIceCandidate', (candidate) => {
+      // Преобразуем в формат твоего сокета
+      emitIce('v2s', candidate) 
+  })
+
+  // 2. Запускаем плагин. Он вернет Offer!
+  // (Внутри Java попросит права, захватит экран и создаст Offer)
+  const result = await ScreenShare.start()
+  
+  const offer = {
+      type: result.type,
+      sdp: result.sdp
   }
+  
+  // 3. Отправляем этот Offer через сокет
+  emitOffer('v2s', offer)
 }
 
-const BUILD_ID = 'BUILD_' + new Date().toISOString()
-log('BUILD_ID', BUILD_ID)
-;(window as any).__BUILD_ID__ = BUILD_ID
+// ... Где ты слушаешь ответ от Viewer'а ...
+
+// viewer ответил (Answer)
+// s.on('webrtc:answer', async (msg) => {
+//     if (msg.pcKey !== 'v2s') return
+//     // Передаем ответ в Java плагин
+//     await ScreenShare.setRemoteDescription(msg.payload)
+// })
+
+// // ICE от Viewer'а
+// s.on('webrtc:ice', async (msg) => {
+//     // Передаем кандидата в Java плагин
+//     await ScreenShare.addIceCandidate({
+//         sdpMid: msg.payload.sdpMid,
+//         sdpMLineIndex: msg.payload.sdpMLineIndex,
+//         candidate: msg.payload.candidate // или просто payload, смотри структуру
+//     })
+// })
 </script>
 
 <template>

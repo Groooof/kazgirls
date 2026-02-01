@@ -6,8 +6,6 @@ export default defineConfig(({mode}) => {
     const env = loadEnv(mode, process.cwd())
     const API_URL = env?.VITE_API_URL || 'http://localhost:8000'
 
-    console.log(env)
-
     return {
         plugins: [
             vue(),
