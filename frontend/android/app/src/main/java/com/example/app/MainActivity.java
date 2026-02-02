@@ -6,12 +6,9 @@ import com.getcapacitor.BridgeActivity;
 import com.example.app.screenshare.ScreenSharePlugin;
 
 public class MainActivity extends BridgeActivity {
-
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+        super.onCreate(savedInstanceState); // <-- Сначала это
 
-        // 1. Регистрируем плагин
         registerPlugin(ScreenSharePlugin.class);
 
         // 2. ЖЕСТКАЯ ОЧИСТКА КЭША
