@@ -11,6 +11,10 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
+    WebView: {
+      allowMixedContent: true,
+      mediaPlaybackRequiresUserAction: false
+    }
   },
 };
 

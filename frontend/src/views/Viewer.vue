@@ -6,6 +6,10 @@ import { config } from '@/config'
 import { useRoute } from 'vue-router'
 import { getToken } from './token'
 
+import { registerPlugin } from '@capacitor/core'
+
+const ScreenShare = registerPlugin('ScreenShare')
+
 // const token = Cookies.get('access_token')
 const route = useRoute()
 const streamerId = Number(route.params.id) // если сервер использует query для роутинга
@@ -101,7 +105,7 @@ const connectSocket = async() => {
   if (socket.value) return
   log('connectSocket()')
 
-  tok.value = Cookies.get('access_token') //await getToken()
+  tok.value = await getToken()
 
   const s = io(`${config.url}/streamers`, {
     auth: { token: tok.value },
@@ -145,27 +149,30 @@ const connectSocket = async() => {
 
   // streamer ответил на наш screen-offer (v2s)
   s.on('webrtc:answer', async (msg) => {
-    log('<= webrtc:answer', { pcKey: msg.pcKey, type: msg.payload.type, sdpLen: msg.payload.sdp?.length })
-
     if (msg.pcKey !== 'v2s') return
-    const conn = pcV2S.value
-    if (!conn) return log('pcV2S is null, ignore answer')
+    await ScreenShare.setRemoteDescription({ sdp: msg.payload.sdp })
+    
+    // const conn = pcV2S.value
+    // if (!conn) return log('pcV2S is null, ignore answer')
 
-    await conn.setRemoteDescription(msg.payload)
+    // await conn.setRemoteDescription(msg.payload)
     log('pcV2S setRemoteDescription(answer) done')
   })
 
   // ICE для обоих направлений
   s.on('webrtc:ice', async (msg) => {
-    const conn = pickPc(msg.pcKey)
-    if (!conn) return log(`pc for ${msg.pcKey} is null, ignore ice`)
+    if (msg.pcKey !== 'v2s') return
+    await ScreenShare.addIceCandidate(msg.payload)
+    
+    // const conn = pickPc(msg.pcKey)
+    // if (!conn) return log(`pc for ${msg.pcKey} is null, ignore ice`)
 
-    try {
-      await conn.addIceCandidate(msg.payload)
-      log(`addIceCandidate(remote) done pcKey=${msg.pcKey}`)
-    } catch (e) {
-      log(`addIceCandidate(remote) ERROR pcKey=${msg.pcKey}`, String(e))
-    }
+    // try {
+    //   await conn.addIceCandidate(msg.payload)
+    //   log(`addIceCandidate(remote) done pcKey=${msg.pcKey}`)
+    // } catch (e) {
+    //   log(`addIceCandidate(remote) ERROR pcKey=${msg.pcKey}`, String(e))
+    // }
   })
 }
 
@@ -273,55 +280,30 @@ onMounted(async() => {
 })
 onBeforeUnmount(stopAll)
 
-import { registerPlugin, Capacitor } from '@capacitor/core'
-
-const ScreenShare = registerPlugin('ScreenShare')
-
 async function startScreenToStreamerV2() {
-  log('Запускаем нативный ScreenShare...')
-  
-  // 1. Слушаем ICE кандидатов от Java и шлем их в сокет
-  ScreenShare.addListener('onIceCandidate', (candidate) => {
-      // Преобразуем в формат твоего сокета
-      emitIce('v2s', candidate) 
-  })
+  try {
+    // Чистим старые листенеры, если нажимаем кнопку второй раз без перезагрузки
+    await ScreenShare.removeAllListeners() 
+    
+    ScreenShare.addListener('onIceCandidate', (c) => {
+      emitIce('v2s', c)
+    })
 
-  // 2. Запускаем плагин. Он вернет Offer!
-  // (Внутри Java попросит права, захватит экран и создаст Offer)
-  const result = await ScreenShare.start()
-  
-  const offer = {
-      type: result.type,
-      sdp: result.sdp
+    log('Calling ScreenShare.start()...')
+    const offer = await ScreenShare.start()
+    log('ScreenShare.start() success', offer)
+    
+    emitOffer('v2s', offer)
+  } catch (e) {
+    log('ScreenShare ERROR:', e)
+    alert('Ошибка запуска стрима: ' + JSON.stringify(e))
   }
-  
-  // 3. Отправляем этот Offer через сокет
-  emitOffer('v2s', offer)
 }
-
-// ... Где ты слушаешь ответ от Viewer'а ...
-
-// viewer ответил (Answer)
-// s.on('webrtc:answer', async (msg) => {
-//     if (msg.pcKey !== 'v2s') return
-//     // Передаем ответ в Java плагин
-//     await ScreenShare.setRemoteDescription(msg.payload)
-// })
-
-// // ICE от Viewer'а
-// s.on('webrtc:ice', async (msg) => {
-//     // Передаем кандидата в Java плагин
-//     await ScreenShare.addIceCandidate({
-//         sdpMid: msg.payload.sdpMid,
-//         sdpMLineIndex: msg.payload.sdpMLineIndex,
-//         candidate: msg.payload.candidate // или просто payload, смотри структуру
-//     })
-// })
 </script>
 
 <template>
   <div style="display:grid; gap:12px; max-width: 980px;">
-    <h2>Viewer</h2>
+    <h2>Viewer ТЕЕЕСТ</h2>
 
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button @click="connectSocket">Connect socket</button>
