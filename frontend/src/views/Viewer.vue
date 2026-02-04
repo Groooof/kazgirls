@@ -150,13 +150,15 @@ const connectSocket = async() => {
   // streamer ответил на наш screen-offer (v2s)
   s.on('webrtc:answer', async (msg) => {
     if (msg.pcKey !== 'v2s') return
-    await ScreenShare.setRemoteDescription({ sdp: msg.payload.sdp })
     
-    // const conn = pcV2S.value
-    // if (!conn) return log('pcV2S is null, ignore answer')
-
-    // await conn.setRemoteDescription(msg.payload)
-    log('pcV2S setRemoteDescription(answer) done')
+    log('📩 Received Answer from Streamer')
+    try {
+        // Отправляем ответ обратно в Java сервис
+        await ScreenShare.setRemoteDescription({ sdp: msg.payload.sdp })
+        log('✅ setRemoteDescription sent to Java')
+    } catch (e) {
+        log('❌ Failed to set Remote Description', e)
+    }
   })
 
   // ICE для обоих направлений
@@ -284,24 +286,24 @@ async function startScreenToStreamerV2() {
   try {
     await ScreenShare.removeAllListeners() 
     
-    // 1. Слушаем ICE (как раньше)
+    // 1. Сначала подписываемся на Offer от сервиса (Java -> Vue)
+    ScreenShare.addListener('onOfferGenerated', (offer) => {
+        log('✅ Java generated offer, sending to Streamer...', offer.type)
+        emitOffer('v2s', offer)
+    })
+
+    // 2. Подписываемся на ICE кандидаты
     ScreenShare.addListener('onIceCandidate', (c) => {
       emitIce('v2s', c)
     })
 
-    // 2. НОВОЕ: Слушаем, когда Сервис родит Offer
-    ScreenShare.addListener('onOfferGenerated', (offer) => {
-        log('Service generated offer!', offer)
-        emitOffer('v2s', offer)
-    })
-
-    log('Starting Service...')
-    // Теперь start вернет только {status: "starting"}, а не offer
+    log('🚀 Starting Background Service...')
+    // 3. Запускаем сервис. Он вернет { status: 'starting' }, но сам Offer придет позже в событии выше
     await ScreenShare.start() 
-    log('Service start command sent.')
-
+    
   } catch (e) {
-    log('Error:', e)
+    log('❌ ScreenShare Start Error:', e)
+    alert('Ошибка: ' + JSON.stringify(e))
   }
 }
 </script>
