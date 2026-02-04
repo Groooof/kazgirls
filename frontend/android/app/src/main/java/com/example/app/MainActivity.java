@@ -7,9 +7,11 @@ import com.example.app.screenshare.ScreenSharePlugin;
 
 public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState); // <-- Сначала это
-
+        // 1. Сначала регистрируем плагин!
         registerPlugin(ScreenSharePlugin.class);
+
+        // 2. И только потом запускаем Capacitor
+        super.onCreate(savedInstanceState);
 
         // 2. ЖЕСТКАЯ ОЧИСТКА КЭША
         // Это гарантирует, что загрузится свежий билд из assets

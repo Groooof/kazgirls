@@ -282,21 +282,26 @@ onBeforeUnmount(stopAll)
 
 async function startScreenToStreamerV2() {
   try {
-    // Чистим старые листенеры, если нажимаем кнопку второй раз без перезагрузки
     await ScreenShare.removeAllListeners() 
     
+    // 1. Слушаем ICE (как раньше)
     ScreenShare.addListener('onIceCandidate', (c) => {
       emitIce('v2s', c)
     })
 
-    log('Calling ScreenShare.start()...')
-    const offer = await ScreenShare.start()
-    log('ScreenShare.start() success', offer)
-    
-    emitOffer('v2s', offer)
+    // 2. НОВОЕ: Слушаем, когда Сервис родит Offer
+    ScreenShare.addListener('onOfferGenerated', (offer) => {
+        log('Service generated offer!', offer)
+        emitOffer('v2s', offer)
+    })
+
+    log('Starting Service...')
+    // Теперь start вернет только {status: "starting"}, а не offer
+    await ScreenShare.start() 
+    log('Service start command sent.')
+
   } catch (e) {
-    log('ScreenShare ERROR:', e)
-    alert('Ошибка запуска стрима: ' + JSON.stringify(e))
+    log('Error:', e)
   }
 }
 </script>
