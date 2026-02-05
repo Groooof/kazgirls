@@ -223,7 +223,6 @@ function createPcReceiver(pcKey: PcKey): RTCPeerConnection {
   }
 
   conn.addTransceiver('video', { direction: 'recvonly' })
-  conn.addTransceiver('audio', { direction: 'recvonly' })
   log(`[pc-${pcKey}] addTransceiver(recvonly)`)
 
   return conn

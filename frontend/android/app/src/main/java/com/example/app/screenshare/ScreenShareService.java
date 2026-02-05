@@ -35,6 +35,7 @@ public class ScreenShareService extends Service {
     private VideoSource videoSource;
     private ScreenCapturerAndroid capturer;
     private SurfaceTextureHelper textureHelper;
+    private MediaProjection mediaProjection;
     
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -162,6 +163,19 @@ public class ScreenShareService extends Service {
                 @Override public void onAddTrack(RtpReceiver r, MediaStream[] s) {}
             });
 
+            MediaProjectionManager mpm =
+                (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+
+            mediaProjection = mpm.getMediaProjection(Activity.RESULT_OK, data);
+
+            mediaProjection.registerCallback(new MediaProjection.Callback() {
+                @Override
+                public void onStop() {
+                    Log.e(TAG, "MediaProjection stopped by system");
+                    stopStream();
+                }
+            }, null);
+
             // ВОТ ЗДЕСЬ БЫЛА ОШИБКА БЕЗ ИМПОРТА
             capturer = new ScreenCapturerAndroid(data, new MediaProjection.Callback() {
                 @Override public void onStop() { Log.e(TAG, "System stopped projection"); stopStream(); }
@@ -188,8 +202,7 @@ public class ScreenShareService extends Service {
                 );
 
             MediaConstraints constraints = new MediaConstraints();
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"));
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"));
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
 
             peerConnection.createOffer(new SdpObserver() {
                 @Override public void onCreateSuccess(SessionDescription sdp) {
@@ -238,6 +251,11 @@ public class ScreenShareService extends Service {
         } catch (Exception e) {}
         stopForeground(true);
         stopSelf();
+
+        if (mediaProjection != null) {
+            mediaProjection.stop();
+            mediaProjection = null;
+        }
     }
 
     private void createNotificationChannel() {

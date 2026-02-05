@@ -199,6 +199,9 @@ function createPcReceiver(pcKey: PcKey): RTCPeerConnection {
     attachRemoteScreen()
   }
 
+  // receiver ждёт входящие
+  conn.addTransceiver('video', { direction: 'recvonly' })
+  conn.addTransceiver('audio', { direction: 'recvonly' })
   log(`[pc-${pcKey}] addTransceiver(recvonly)`)
 
   return conn
