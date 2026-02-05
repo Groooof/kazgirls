@@ -164,7 +164,13 @@ public class ScreenShareService extends Service {
             capturer.startCapture(720, 1280, 30);
 
             VideoTrack videoTrack = factory.createVideoTrack("SCREEN_TRACK", videoSource);
-            peerConnection.addTrack(videoTrack);
+            RtpTransceiver transceiver =
+                peerConnection.addTransceiver(
+                    videoTrack,
+                    new RtpTransceiver.RtpTransceiverInit(
+                    RtpTransceiver.RtpTransceiverDirection.SEND_ONLY
+                    )
+                );
 
             MediaConstraints constraints = new MediaConstraints();
             constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"));

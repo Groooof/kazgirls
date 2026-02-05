@@ -49,7 +49,7 @@ const localVideo = ref<HTMLVideoElement | null>(null)   // превью экра
 const socket = shallowRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null)
 
 const pcS2V = shallowRef<RTCPeerConnection | null>(null) // Streamer -> Viewer (receive camera)
-const pcV2S = shallowRef<RTCPeerConnection | null>(null) // Viewer -> Streamer (send screen)
+// const pcV2S = shallowRef<RTCPeerConnection | null>(null) // Для Пк
 
 const remoteCameraStream = shallowRef<MediaStream | null>(null)
 const localScreenStream = shallowRef<MediaStream | null>(null)
@@ -72,9 +72,10 @@ function emitAnswer(pcKey: PcKey, sdp: RTCSessionDescriptionInit) {
 function emitIce(pcKey: PcKey, c: RTCIceCandidateInit) {
   socket.value?.emit('webrtc:ice', { pcKey, payload: c })
 }
-function pickPc(pcKey: PcKey) {
-  return pcKey === 's2v' ? pcS2V.value : pcV2S.value
-}
+// Для пк
+// function pickPc(pcKey: PcKey) {
+//   return pcKey === 's2v' ? pcS2V.value : pcV2S.value
+// }
 
 function attachRemoteCamera() {
   const el = remoteVideo.value
@@ -186,17 +187,18 @@ function commonPcLogs(conn: RTCPeerConnection, name: string) {
   conn.onsignalingstatechange = () => log(`[${name}] signalingState=${conn.signalingState}`)
 }
 
-function createPcSender(pcKey: PcKey): RTCPeerConnection {
-  const conn = new RTCPeerConnection(rtcConfig)
-  commonPcLogs(conn, `pc-${pcKey}`)
+// Для пк
+// function createPcSender(pcKey: PcKey): RTCPeerConnection {
+//   const conn = new RTCPeerConnection(rtcConfig)
+//   commonPcLogs(conn, `pc-${pcKey}`)
 
-  conn.onicecandidate = (e) => {
-    if (!e.candidate) return log(`[pc-${pcKey}] onicecandidate: null`)
-    emitIce(pcKey, e.candidate.toJSON())
-    log(`[pc-${pcKey}] => ice`)
-  }
-  return conn
-}
+//   conn.onicecandidate = (e) => {
+//     if (!e.candidate) return log(`[pc-${pcKey}] onicecandidate: null`)
+//     emitIce(pcKey, e.candidate.toJSON())
+//     log(`[pc-${pcKey}] => ice`)
+//   }
+//   return conn
+// }
 
 function createPcReceiver(pcKey: PcKey): RTCPeerConnection {
   const conn = new RTCPeerConnection(rtcConfig)
@@ -227,42 +229,43 @@ function createPcReceiver(pcKey: PcKey): RTCPeerConnection {
   return conn
 }
 
-/** ===== actions ===== */
+/** ===== actions ===== */ // Для пк
 // 2) Viewer -> Streamer: screen share
-async function startScreenToStreamer() {
-  if (!socket.value) log('WARNING: socket not connected yet (connectSocket())')
+// async function startScreenToStreamer() {
+//   if (!socket.value) log('WARNING: socket not connected yet (connectSocket())')
 
-  // В браузере: getDisplayMedia. На мобилке может быть ограничено.
-  log('startScreenToStreamer(): getDisplayMedia')
-  const screenStream = await navigator.mediaDevices.getDisplayMedia({
-    video: true,
-    audio: true, // может не поддерживаться/не даваться
-  })
+//   // В браузере: getDisplayMedia. На мобилке может быть ограничено.
+//   log('startScreenToStreamer(): getDisplayMedia')
+//   const screenStream = await navigator.mediaDevices.getDisplayMedia({
+//     video: true,
+//     audio: true, // может не поддерживаться/не даваться
+//   })
 
-  localScreenStream.value = screenStream
-  attachLocalScreenPreview()
+//   localScreenStream.value = screenStream
+//   attachLocalScreenPreview()
 
-  const conn = createPcSender('v2s')
-  pcV2S.value = conn
+//   const conn = createPcSender('v2s')
+//   pcV2S.value = conn
 
-  for (const track of screenStream.getTracks()) {
-    conn.addTrack(track, screenStream)
-    log('[pc-v2s] addTrack', { kind: track.kind, id: track.id })
-  }
+//   for (const track of screenStream.getTracks()) {
+//     conn.addTrack(track, screenStream)
+//     log('[pc-v2s] addTrack', { kind: track.kind, id: track.id })
+//   }
 
-  const offer = await conn.createOffer()
-  await conn.setLocalDescription(offer)
-  log('[pc-v2s] setLocalDescription(offer) done')
+//   const offer = await conn.createOffer()
+//   await conn.setLocalDescription(offer)
+//   log('[pc-v2s] setLocalDescription(offer) done')
 
-  emitOffer('v2s', conn.localDescription!)
-  log('=> webrtc:offer (v2s)')
-}
+//   emitOffer('v2s', conn.localDescription!)
+//   log('=> webrtc:offer (v2s)')
+// }
 
 function stopAll() {
   log('stopAll()')
 
   if (pcS2V.value) { pcS2V.value.close(); pcS2V.value = null; log('pcS2V closed') }
-  if (pcV2S.value) { pcV2S.value.close(); pcV2S.value = null; log('pcV2S closed') }
+  // Для пк
+  // if (pcV2S.value) { pcV2S.value.close(); pcV2S.value = null; log('pcV2S closed') }
 
   remoteCameraStream.value = null
   if (remoteVideo.value) remoteVideo.value.srcObject = null
@@ -289,7 +292,10 @@ async function startScreenToStreamerV2() {
     // 1. Сначала подписываемся на Offer от сервиса (Java -> Vue)
     ScreenShare.addListener('onOfferGenerated', (offer) => {
         log('✅ Java generated offer, sending to Streamer...', offer.type)
-        emitOffer('v2s', offer)
+        emitOffer('v2s', {
+          type: offer.type,
+          sdp: offer.sdp
+        })
     })
 
     // 2. Подписываемся на ICE кандидаты

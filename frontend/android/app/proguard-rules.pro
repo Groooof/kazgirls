@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# WebRTC rules
+-keep class org.webrtc.** { *; }
+-keep class com.example.app.screenshare.** { *; }
+-dontwarn org.webrtc.**
+-keepattributes InnerClasses, Signature, EnclosingMethod

@@ -94,6 +94,8 @@ function connectSocket() {
   s.on('connect', () => log(`socket connected id=${s.id}`))
   s.on('disconnect', (r) => log(`socket disconnected reason=${r}`))
 
+  const pendingIce: RTCIceCandidateInit[] = []
+
   // viewer прислал offer (это будет v2s: viewer -> streamer)
   s.on('webrtc:offer', async (msg) => {
     log('<= webrtc:offer', { pcKey: msg.pcKey, type: msg.payload.type, sdpLen: msg.payload.sdp?.length })
@@ -108,6 +110,11 @@ function connectSocket() {
 
     await conn.setRemoteDescription(msg.payload)
     log('pcV2S setRemoteDescription(offer) done')
+
+    for (const c of pendingIce) {
+      await conn.addIceCandidate(c)
+    }
+    pendingIce.length = 0
 
     const answer = await conn.createAnswer()
     await conn.setLocalDescription(answer)
@@ -127,19 +134,24 @@ function connectSocket() {
 
     await conn.setRemoteDescription(msg.payload)
     log('pcS2V setRemoteDescription(answer) done')
+
+    for (const c of pendingIce) {
+      await conn.addIceCandidate(c)
+    }
+    pendingIce.length = 0
   })
 
   // ICE для обоих направлений
   s.on('webrtc:ice', async (msg) => {
     const conn = pickPc(msg.pcKey)
-    if (!conn) return log(`pc for ${msg.pcKey} is null, ignore ice`)
+    if (!conn) return
 
-    try {
-      await conn.addIceCandidate(msg.payload)
-      log(`addIceCandidate(remote) done pcKey=${msg.pcKey}`)
-    } catch (e) {
-      log(`addIceCandidate(remote) ERROR pcKey=${msg.pcKey}`, String(e))
+    if (!conn.remoteDescription) {
+      pendingIce.push(msg.payload)
+      return
     }
+
+    await conn.addIceCandidate(msg.payload)
   })
 }
 
