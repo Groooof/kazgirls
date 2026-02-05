@@ -45,6 +45,15 @@ public class ScreenSharePlugin extends Plugin {
                 ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
             }
         }
+
+        if (getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                getActivity(),
+                new String[]{Manifest.permission.RECORD_AUDIO},
+                102
+            );
+        }
         
         // ВАЖНО: Запрашиваем доступ к экрану
         android.media.projection.MediaProjectionManager manager = 

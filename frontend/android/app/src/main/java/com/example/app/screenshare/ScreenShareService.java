@@ -38,6 +38,13 @@ public class ScreenShareService extends Service {
     private SurfaceTextureHelper textureHelper;
     
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.shutdownNow();
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        executor.shutdownNow();
+    }
 
     @Override
     public void onCreate() {
@@ -115,10 +122,16 @@ public class ScreenShareService extends Service {
             
             eglBase = EglBase.create();
             
-            factory = PeerConnectionFactory.builder()
-                .setVideoEncoderFactory(new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), false, false))
-                .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglBase.getEglBaseContext()))
-                .createPeerConnectionFactory();
+            factory = 
+                PeerConnectionFactory.builder()
+                    .setVideoEncoderFactory(
+                        new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), false, false)
+                    )
+                    .setVideoDecoderFactory(
+                        new DefaultVideoDecoderFactory(eglBase.getEglBaseContext())
+                    )
+                    .setAudioDeviceModule(null) // 🔥 ВАЖНО
+                    .createPeerConnectionFactory();
 
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
             iceServers.add(PeerConnection.IceServer.builder("stun:nex2ilo.com:3478").createIceServer());
@@ -161,7 +174,11 @@ public class ScreenShareService extends Service {
             capturer.initialize(textureHelper, ctx, videoSource.getCapturerObserver());
 
             Log.d(TAG, "Start Capture 720x1280...");
-            capturer.startCapture(720, 1280, 30);
+            DisplayMetrics metrics = ctx.getResources().getDisplayMetrics();
+            int width = metrics.widthPixels;
+            int height = metrics.heightPixels;
+
+            capturer.startCapture(width, height, 30);
 
             VideoTrack videoTrack = factory.createVideoTrack("SCREEN_TRACK", videoSource);
             RtpTransceiver transceiver =
