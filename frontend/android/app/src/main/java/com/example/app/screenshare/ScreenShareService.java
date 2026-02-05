@@ -11,8 +11,7 @@ import android.os.Build;
 import android.os.IBinder;
 import androidx.core.app.NotificationCompat;
 import android.util.Log;
-
-// --- ВОТ ЭТОГО ИМПОРТА НЕ ХВАТАЛО ---
+import android.util.DisplayMetrics;
 import android.media.projection.MediaProjection; 
 
 import com.getcapacitor.JSObject;
@@ -38,7 +37,6 @@ public class ScreenShareService extends Service {
     private SurfaceTextureHelper textureHelper;
     
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.shutdownNow();
 
     @Override
     public void onDestroy() {
