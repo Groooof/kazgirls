@@ -189,7 +189,6 @@ function createPcReceiver(pcKey: PcKey): RTCPeerConnection {
   conn.ontrack = (ev) => {
     log(`[pc-${pcKey}] ontrack`, { kind: ev.track.kind, id: ev.track.id, streams: ev.streams.map(s => s.id) })
 
-    // viewer шлёт screen — он придёт сюда (видео+аудио может не быть)
     if (ev.streams[0]) {
       remoteScreenStream.value = ev.streams[0]
     } else {
@@ -201,8 +200,11 @@ function createPcReceiver(pcKey: PcKey): RTCPeerConnection {
 
   // receiver ждёт входящие
   conn.addTransceiver('video', { direction: 'recvonly' })
-  conn.addTransceiver('audio', { direction: 'recvonly' })
-  log(`[pc-${pcKey}] addTransceiver(recvonly)`)
+  
+  // УДАЛИ ЭТУ СТРОКУ! Мы не передаем аудио с Android, и этот запрос крашит телефон.
+  // conn.addTransceiver('audio', { direction: 'recvonly' }) 
+  
+  log(`[pc-${pcKey}] addTransceiver(video recvonly)`)
 
   return conn
 }

@@ -4,8 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
-import android.Manifest;
-import android.content.pm.PackageManager;
 
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -15,22 +13,19 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.JSObject;
 
 import androidx.activity.result.ActivityResult;
-import androidx.core.app.ActivityCompat;
 
 @CapacitorPlugin(name = "ScreenShare")
 public class ScreenSharePlugin extends Plugin {
 
     private static final String TAG = "ScreenSharePlugin";
-    private static ScreenSharePlugin instance; // Ссылка на себя, чтобы Сервис мог звать
+    private static ScreenSharePlugin instance;
 
     @Override
     public void load() {
         super.load();
-        instance = this; // Сохраняем инстанс
-        Log.d(TAG, "Plugin loaded. Ready to bridge events.");
+        instance = this;
     }
 
-    // --- Метод для приема событий из Сервиса ---
     public static void sendEventToJS(String eventName, JSObject data) {
         if (instance != null) {
             instance.notifyListeners(eventName, data);
@@ -39,23 +34,6 @@ public class ScreenSharePlugin extends Plugin {
 
     @PluginMethod
     public void start(PluginCall call) {
-        // Просим права (Уведомления + Аудио)
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            if (getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
-            }
-        }
-
-        if (getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                getActivity(),
-                new String[]{Manifest.permission.RECORD_AUDIO},
-                102
-            );
-        }
-        
-        // ВАЖНО: Запрашиваем доступ к экрану
         android.media.projection.MediaProjectionManager manager = 
             (android.media.projection.MediaProjectionManager) getContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         
@@ -73,13 +51,11 @@ public class ScreenSharePlugin extends Plugin {
             return;
         }
 
-        Log.d(TAG, "Permission granted. Handing over to Service...");
-
-        // ЗАПУСКАЕМ СЕРВИС И ПЕРЕДАЕМ ЕМУ ДАННЫЕ
+        // Запускаем сервис
         Intent serviceIntent = new Intent(getContext(), ScreenShareService.class);
         serviceIntent.setAction("START");
         serviceIntent.putExtra("RESULT_CODE", resultCode);
-        serviceIntent.putExtra("DATA", data); // Передаем Intent (токен доступа)
+        serviceIntent.putExtra("DATA", data);
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             getContext().startForegroundService(serviceIntent);
@@ -87,7 +63,6 @@ public class ScreenSharePlugin extends Plugin {
             getContext().startService(serviceIntent);
         }
         
-        // Возвращаем успех во Vue сразу, WebRTC поднимется асинхронно в сервисе
         JSObject ret = new JSObject();
         ret.put("status", "starting");
         call.resolve(ret);
@@ -96,11 +71,10 @@ public class ScreenSharePlugin extends Plugin {
     @PluginMethod
     public void setRemoteDescription(PluginCall call) {
         String sdp = call.getString("sdp");
-        // Пересылаем команду в Сервис
         Intent intent = new Intent(getContext(), ScreenShareService.class);
         intent.setAction("SET_REMOTE_DESC");
         intent.putExtra("sdp", sdp);
-        getContext().startService(intent); // startService просто доставит команду в уже бегущий сервис
+        getContext().startService(intent);
         call.resolve();
     }
 

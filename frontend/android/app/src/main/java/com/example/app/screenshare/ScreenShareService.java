@@ -12,38 +12,35 @@ import android.os.IBinder;
 import androidx.core.app.NotificationCompat;
 import android.util.Log;
 import android.util.DisplayMetrics;
-import android.media.projection.MediaProjection; 
+import android.view.WindowManager;
 
 import com.getcapacitor.JSObject;
 
 import org.webrtc.*;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ScreenShareService extends Service {
     
-    public static final String CHANNEL_ID = "ScreenShare_Service_V10";
-    public static final int NOTIFICATION_ID = 999;
+    public static final String CHANNEL_ID = "ScreenShare_Final";
+    public static final int NOTIFICATION_ID = 101;
     private static final String TAG = "ScreenShareService";
 
+    // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (Защита от GC) ---
+    // Если их убрать внутрь методов -> приложение упадет через 2 секунды
     private PeerConnectionFactory factory;
     private PeerConnection peerConnection;
     private EglBase eglBase;
     private VideoSource videoSource;
     private ScreenCapturerAndroid capturer;
     private SurfaceTextureHelper textureHelper;
-    private MediaProjection mediaProjection;
-    
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private VideoTrack localVideoTrack; 
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        executor.shutdownNow();
-    }
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @Override
     public void onCreate() {
@@ -53,19 +50,21 @@ public class ScreenShareService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // 1. СРАЗУ (в первой строке) запускаем Foreground
+        startForegroundNotification();
+
         if (intent == null || intent.getAction() == null) return START_NOT_STICKY;
 
         String action = intent.getAction();
-        Log.d(TAG, "onStartCommand Action: " + action);
-
+        Log.d(TAG, "Service Action: " + action);
+        
         if ("START".equals(action)) {
-            startForegroundNotification();
-            
             int resultCode = intent.getIntExtra("RESULT_CODE", 0);
             Intent data = intent.getParcelableExtra("DATA");
-
             if (resultCode != 0 && data != null) {
-                executor.execute(() -> initWebRTC(data));
+                executor.execute(() -> initWebRTC(resultCode, data));
+            } else {
+                stopSelf();
             }
         } 
         else if ("SET_REMOTE_DESC".equals(action)) {
@@ -79,24 +78,19 @@ public class ScreenShareService extends Service {
             executor.execute(() -> addIceCandidate(mid, idx, sdp));
         }
         else if ("STOP".equals(action)) {
-            stopStream();
+            executor.execute(this::stopStream);
         }
 
         return START_STICKY;
     }
 
     private void startForegroundNotification() {
-        int iconResId = android.R.drawable.ic_dialog_info;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Демонстрация экрана")
-                .setContentText("Идет трансляция...")
-                .setSmallIcon(iconResId)
+                .setContentTitle("Screen Share")
+                .setContentText("Live")
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setOngoing(true);
-
-        if (Build.VERSION.SDK_INT >= 31) {
-            builder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);
-        }
 
         int type = 0;
         if (Build.VERSION.SDK_INT >= 29) {
@@ -110,26 +104,29 @@ public class ScreenShareService extends Service {
         }
     }
 
-    private void initWebRTC(Intent data) {
+    private void initWebRTC(int resultCode, Intent data) {
         try {
-            Log.d(TAG, "Initializing WebRTC inside Service...");
+            Log.d(TAG, "Initializing WebRTC (Hardware + No Audio)...");
             Context ctx = getApplicationContext();
             
             PeerConnectionFactory.initialize(
-                PeerConnectionFactory.InitializationOptions.builder(ctx).createInitializationOptions()
+                PeerConnectionFactory.InitializationOptions.builder(ctx)
+                    .setEnableInternalTracer(false)
+                    .createInitializationOptions()
             );
             
             eglBase = EglBase.create();
             
-            factory = 
-                PeerConnectionFactory.builder()
-                    .setVideoEncoderFactory(
-                        new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), false, false)
-                    )
-                    .setVideoDecoderFactory(
-                        new DefaultVideoDecoderFactory(eglBase.getEglBaseContext())
-                    )
-                    .setAudioDeviceModule(null) // 🔥 ВАЖНО
+            // 1. ВОЗВРАЩАЕМ HARDWARE ENCODER (Default)
+            // Software (программный) крашил твой телефон сразу. Hardware работал 2 сек.
+            VideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), true, true);
+            VideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(eglBase.getEglBaseContext());
+
+            factory = PeerConnectionFactory.builder()
+                    .setVideoEncoderFactory(encoderFactory)
+                    .setVideoDecoderFactory(decoderFactory)
+                    // 2. ОТКЛЮЧАЕМ АУДИО (Чтобы не требовал прав и не крашил движок)
+                    .setAudioDeviceModule(null) 
                     .createPeerConnectionFactory();
 
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
@@ -141,6 +138,8 @@ public class ScreenShareService extends Service {
 
             PeerConnection.RTCConfiguration rtcConfig = new PeerConnection.RTCConfiguration(iceServers);
             rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+            rtcConfig.iceTransportsType = PeerConnection.IceTransportsType.ALL; 
+            rtcConfig.bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE;
 
             peerConnection = factory.createPeerConnection(rtcConfig, new PeerConnection.Observer() {
                 @Override public void onIceCandidate(IceCandidate candidate) {
@@ -163,56 +162,61 @@ public class ScreenShareService extends Service {
                 @Override public void onAddTrack(RtpReceiver r, MediaStream[] s) {}
             });
 
-            MediaProjectionManager mpm =
-                (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-
-            mediaProjection = mpm.getMediaProjection(Activity.RESULT_OK, data);
-
-            mediaProjection.registerCallback(new MediaProjection.Callback() {
-                @Override
-                public void onStop() {
-                    Log.e(TAG, "MediaProjection stopped by system");
-                    stopStream();
-                }
-            }, null);
-
-            // ВОТ ЗДЕСЬ БЫЛА ОШИБКА БЕЗ ИМПОРТА
-            capturer = new ScreenCapturerAndroid(data, new MediaProjection.Callback() {
-                @Override public void onStop() { Log.e(TAG, "System stopped projection"); stopStream(); }
+            // --- ЗАХВАТ ---
+            capturer = new ScreenCapturerAndroid(data, new android.media.projection.MediaProjection.Callback() {
+                @Override public void onStop() { Log.e(TAG, "Projection stopped"); }
             });
 
             textureHelper = SurfaceTextureHelper.create("ScreenCaptureThread", eglBase.getEglBaseContext());
             videoSource = factory.createVideoSource(true);
             capturer.initialize(textureHelper, ctx, videoSource.getCapturerObserver());
 
-            Log.d(TAG, "Start Capture 720x1280...");
-            DisplayMetrics metrics = ctx.getResources().getDisplayMetrics();
-            int width = metrics.widthPixels;
-            int height = metrics.heightPixels;
+            // 3. РАЗРЕШЕНИЕ qHD (540x960)
+            // Идеально для телефонов. Делится на 16. Не перегружает энкодер.
+            int width = 540;
+            int height = 960;
+            
+            WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            DisplayMetrics metrics = new DisplayMetrics();
+            wm.getDefaultDisplay().getRealMetrics(metrics);
+            if (metrics.widthPixels > metrics.heightPixels) {
+                width = 960;
+                height = 540;
+            }
 
-            capturer.startCapture(width, height, 30);
+            Log.d(TAG, "Start Capture: " + width + "x" + height);
+            capturer.startCapture(width, height, 25); 
 
-            VideoTrack videoTrack = factory.createVideoTrack("SCREEN_TRACK", videoSource);
-            RtpTransceiver transceiver =
-                peerConnection.addTransceiver(
-                    videoTrack,
-                    new RtpTransceiver.RtpTransceiverInit(
-                    RtpTransceiver.RtpTransceiverDirection.SEND_ONLY
-                    )
-                );
+            // 4. ТРЕК В ГЛОБАЛЬНУЮ ПЕРЕМЕННУЮ (FIX GC CRASH)
+            localVideoTrack = factory.createVideoTrack("ARDAMSv0", videoSource);
+            localVideoTrack.setEnabled(true);
 
+            // 5. ИСПОЛЬЗУЕМ TRANSCEIVER С ID (FIX STREAMS: [])
+            RtpTransceiver.RtpTransceiverInit init = new RtpTransceiver.RtpTransceiverInit(
+                RtpTransceiver.RtpTransceiverDirection.SEND_ONLY,
+                Collections.singletonList("ARDAMS")
+            );
+            peerConnection.addTransceiver(localVideoTrack, init);
+
+            // Offer
             MediaConstraints constraints = new MediaConstraints();
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"));
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"));
 
             peerConnection.createOffer(new SdpObserver() {
                 @Override public void onCreateSuccess(SessionDescription sdp) {
-                    Log.d(TAG, "Offer Created!");
-                    peerConnection.setLocalDescription(this, sdp);
-                    
-                    JSObject ret = new JSObject();
-                    ret.put("type", sdp.type.canonicalForm());
-                    ret.put("sdp", sdp.description);
-                    ScreenSharePlugin.sendEventToJS("onOfferGenerated", ret);
+                    Log.d(TAG, "Offer Created");
+                    peerConnection.setLocalDescription(new SdpObserver() {
+                        @Override public void onSetSuccess() {
+                            JSObject ret = new JSObject();
+                            ret.put("type", sdp.type.canonicalForm());
+                            ret.put("sdp", sdp.description);
+                            ScreenSharePlugin.sendEventToJS("onOfferGenerated", ret);
+                        }
+                        @Override public void onSetFailure(String s) { Log.e(TAG, "SetLocal Fail: " + s); }
+                        @Override public void onCreateSuccess(SessionDescription s) {}
+                        @Override public void onCreateFailure(String s) {}
+                    }, sdp);
                 }
                 @Override public void onCreateFailure(String s) { Log.e(TAG, "Offer Fail: " + s); }
                 @Override public void onSetFailure(String s) {}
@@ -220,7 +224,7 @@ public class ScreenShareService extends Service {
             }, constraints);
 
         } catch (Exception e) {
-            Log.e(TAG, "WebRTC Crash: " + e.getMessage());
+            Log.e(TAG, "CRASH: " + e.getMessage());
             e.printStackTrace();
             stopSelf();
         }
@@ -230,9 +234,9 @@ public class ScreenShareService extends Service {
         if (peerConnection == null) return;
         SessionDescription answer = new SessionDescription(SessionDescription.Type.ANSWER, sdp);
         peerConnection.setRemoteDescription(new SdpObserver() {
-            @Override public void onSetSuccess() { Log.d(TAG, "Remote Set OK"); }
-            @Override public void onSetFailure(String s) { Log.e(TAG, "Remote Set Fail: " + s); }
-            @Override public void onCreateSuccess(SessionDescription sdp) {}
+            @Override public void onSetSuccess() { Log.d(TAG, "RemoteDesc Set OK"); }
+            @Override public void onSetFailure(String s) { Log.e(TAG, "RemoteDesc Fail: " + s); }
+            @Override public void onCreateSuccess(SessionDescription s) {}
             @Override public void onCreateFailure(String s) {}
         }, answer);
     }
@@ -248,14 +252,18 @@ public class ScreenShareService extends Service {
             if (capturer != null) { capturer.stopCapture(); capturer.dispose(); capturer = null; }
             if (videoSource != null) { videoSource.dispose(); videoSource = null; }
             if (peerConnection != null) { peerConnection.close(); peerConnection = null; }
-        } catch (Exception e) {}
+            if (eglBase != null) { eglBase.release(); eglBase = null; }
+            if (factory != null) { factory.dispose(); factory = null; }
+        } catch (Exception e) { e.printStackTrace(); }
+        
         stopForeground(true);
         stopSelf();
-
-        if (mediaProjection != null) {
-            mediaProjection.stop();
-            mediaProjection = null;
-        }
+    }
+    
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        executor.shutdownNow();
     }
 
     private void createNotificationChannel() {

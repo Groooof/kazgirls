@@ -1,21 +1,23 @@
 package com.example.app;
 
 import android.os.Bundle;
-import android.webkit.WebView; // Добавь этот импорт
 import com.getcapacitor.BridgeActivity;
 import com.example.app.screenshare.ScreenSharePlugin;
 
 public class MainActivity extends BridgeActivity {
-    protected void onCreate(Bundle savedInstanceState) {
-        // 1. Сначала регистрируем плагин!
+    
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        // 1. Регистрируем плагин
         registerPlugin(ScreenSharePlugin.class);
 
-        // 2. И только потом запускаем Capacitor
+        // 2. Инициализируем мост
         super.onCreate(savedInstanceState);
 
-        // 2. ЖЕСТКАЯ ОЧИСТКА КЭША
-        // Это гарантирует, что загрузится свежий билд из assets
-        this.getBridge().getWebView().clearCache(true);
-        this.getBridge().getWebView().clearHistory();
+        // 3. Безопасная очистка кэша (с проверкой на null)
+        if (this.getBridge() != null && this.getBridge().getWebView() != null) {
+            this.getBridge().getWebView().clearCache(true);
+            this.getBridge().getWebView().clearHistory();
+        }
     }
 }
